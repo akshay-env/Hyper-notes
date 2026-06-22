@@ -29,6 +29,12 @@ public:
 
     // Deletion
     [[nodiscard]] bool deleteItem(const QString &path) const;
+
+    // Recycle bin
+    [[nodiscard]] bool moveToBin(const QString &vaultPath, const QString &itemPath) const;
+    [[nodiscard]] QVariantList getBinTree(const QString &vaultPath) const;
+    [[nodiscard]] bool restoreFromBin(const QString &vaultPath, const QString &binItemPath) const;
+    [[nodiscard]] bool deleteFromBinPermanently(const QString &vaultPath, const QString &binItemPath) const;
 };
 
 } // namespace HyperLinkNotes::Core

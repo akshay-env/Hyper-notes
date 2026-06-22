@@ -7,6 +7,7 @@ Item {
     property string nodeTitle: ""
     property string nodePath: ""
     property int    nodeLayer: 0
+    property int    nodeDegree: 0
     property bool   isActiveNote: false
 
     // Position: dot CENTER in graph space
@@ -25,7 +26,15 @@ Item {
     signal nodeDragged(string path, real newX, real newY)
     signal nodeDragFinished(string path)
 
-    readonly property int dotRadius: isActiveNote ? 8 : 6
+    // Node size scales with connection count (inbound + outbound links), like
+    // Obsidian's graph. Growth is logarithmic so it tapers at high degree —
+    // hubs read as clearly larger without ballooning and breaking the layout.
+    // The active note keeps a small constant bump on top.
+    readonly property int dotRadius: {
+        var base = isActiveNote ? 8 : 6;
+        var boost = Math.min(3.5 * Math.log2(1 + nodeDegree), 16);
+        return Math.round(base + boost);
+    }
 
     // Center the item horizontally on targetX; dot top at (targetY - dotRadius)
     x: targetX - width / 2

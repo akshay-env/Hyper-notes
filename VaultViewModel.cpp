@@ -90,7 +90,23 @@ QString VaultViewModel::getLastCreatedPath() const noexcept
 
 bool VaultViewModel::deleteItem(const QString &path)
 {
-    return m_repository.deleteItem(path);
+    // Soft delete: move to the vault's recycle bin instead of removing.
+    return m_repository.moveToBin(m_vaultPath, path);
+}
+
+QVariantList VaultViewModel::getBinTree() const
+{
+    return m_repository.getBinTree(m_vaultPath);
+}
+
+bool VaultViewModel::restoreFromBin(const QString &binItemPath)
+{
+    return m_repository.restoreFromBin(m_vaultPath, binItemPath);
+}
+
+bool VaultViewModel::deleteFromBinPermanently(const QString &binItemPath)
+{
+    return m_repository.deleteFromBinPermanently(m_vaultPath, binItemPath);
 }
 
 } // namespace HyperLinkNotes::ViewModel

@@ -37,8 +37,13 @@ public:
     Q_INVOKABLE bool saveFile(const QString &path, const QString &content) const;
     Q_INVOKABLE [[nodiscard]] QString getLastCreatedPath() const noexcept;
 
-    // Deletion
+    // Deletion (soft — moves the item to the vault's recycle bin)
     Q_INVOKABLE bool deleteItem(const QString &path);
+
+    // Recycle bin
+    Q_INVOKABLE [[nodiscard]] QVariantList getBinTree() const;
+    Q_INVOKABLE bool restoreFromBin(const QString &binItemPath);
+    Q_INVOKABLE bool deleteFromBinPermanently(const QString &binItemPath);
 
 signals:
     void vaultPathChanged();

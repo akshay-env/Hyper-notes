@@ -23,6 +23,16 @@ qt_add_executable(appHyperLinkNotes
     src/vault/ReadFile.cpp
     src/vault/SaveFile.cpp
     src/vault/DeleteItem.cpp
+    src/vault/BinIndex.cpp
+    src/vault/BinIndex.h
+    src/vault/MoveToBin.cpp
+    src/vault/MoveToBin.h
+    src/vault/GetBinTree.cpp
+    src/vault/GetBinTree.h
+    src/vault/RestoreFromBin.cpp
+    src/vault/RestoreFromBin.h
+    src/vault/DeleteFromBin.cpp
+    src/vault/DeleteFromBin.h
     VaultViewModel.cpp
     VaultViewModel.h
     MarkdownHighlighter.cpp
@@ -50,6 +60,8 @@ qt_add_qml_module(appHyperLinkNotes
     QML_FILES
         Main.qml
         ui/core/TitleBar.qml
+        ui/core/TabStrip.qml
+        ui/core/NewTabView.qml
         ui/dialogs/CustomDialog.qml
         ui/components/IconButton.qml
         ui/windows/BinWindow.qml
@@ -67,6 +79,7 @@ qt_add_qml_module(appHyperLinkNotes
         ui/editor/NoteBody.qml
         ui/sidebar/Sidebar.qml
         ui/sidebar/SidebarHeader.qml
+        ui/sidebar/SidebarSearch.qml
         ui/sidebar/FileTree.qml
         ui/sidebar/FolderTreeItem.qml
         ui/sidebar/TreeContextMenu.qml
@@ -78,9 +91,13 @@ qt_add_qml_module(appHyperLinkNotes
         scripts/tree/search.js
         scripts/tree/toggleExpansion.js
         scripts/tree/runExpansionAnimation.js
+        scripts/tree/flattenVisible.js
+        scripts/tree/selectionUtils.js
+        scripts/tree/filterTree.js
         scripts/file/openFileByPath.js
         scripts/file/saveTitleNow.js
         scripts/file/createNewNote.js
+        scripts/file/createNoteInRoot.js
         scripts/drag/handleDropPath.js
         scripts/drag/beginDragProxy.js
         scripts/drag/updateDragProxy.js

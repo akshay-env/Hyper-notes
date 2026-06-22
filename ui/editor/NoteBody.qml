@@ -58,10 +58,12 @@ ScrollView {
                     } else {
                         mouse.accepted = false;
                     }
-                } else if (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)) {
+                } else if (mouse.button === Qt.LeftButton) {
+                    // A single click on a [[link]] jumps to that note. If the click
+                    // didn't land on a link, fall through so it places the cursor.
                     let pos = noteBody.positionAt(mouse.x, mouse.y);
-                    OpenLink.checkAndOpenLink(window, scrollView.vaultFs, noteBody.text, pos);
-                    mouse.accepted = true;
+                    let opened = OpenLink.checkAndOpenLink(window, scrollView.vaultFs, noteBody.text, pos);
+                    mouse.accepted = opened;
                 } else {
                     mouse.accepted = false;
                 }

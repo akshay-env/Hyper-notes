@@ -33,11 +33,6 @@ ColumnLayout {
         }
     }
 
-    EditorHeader {
-        id: editorHeader
-        Layout.fillWidth: true
-    }
-
     NoteTitle {
         id: noteTitle
         Layout.fillWidth: true
@@ -52,6 +47,8 @@ ColumnLayout {
                     root.currentLoadedPath = newPath; // Prevent file reload on refresh
                     noteTitle.editingPath = newPath;
                     noteTitle.editingOriginalName = newName;
+                    // Keep the open tab pointing at the renamed file
+                    window.updateActiveTabLabel(newPath, newName);
                 }
                 RefreshTree.refreshTree(window, window.vaultFsRef);
             } else {

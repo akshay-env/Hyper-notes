@@ -60,24 +60,28 @@ function openLink(window, vaultFs, linkTitle) {
     }
 }
 
-// Checks if the cursor position is inside a [[ ]] block, and if so, opens it
+// Checks if the cursor position is inside a [[ ]] block, and if so, opens it.
+// Returns true when a link was found and opened (so the caller can swallow the
+// click), false when the position isn't on a link (caller lets the click place
+// the text cursor as normal).
 function checkAndOpenLink(window, vaultFs, text, cursorPosition) {
-    console.log("[OpenLink] Checking Ctrl+Click at position:", cursorPosition);
-    if (cursorPosition < 0 || cursorPosition >= text.length) return;
-    
+    console.log("[OpenLink] Checking click at position:", cursorPosition);
+    if (cursorPosition < 0 || cursorPosition >= text.length) return false;
+
     // Find all [[ ]] blocks in the text
     let regex = /\[\[(.*?)\]\]/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
         let start = match.index;
         let end = start + match[0].length;
-        
+
         if (cursorPosition >= start && cursorPosition <= end) {
             let linkTitle = match[1];
             console.log("[OpenLink] Found link at cursor position:", linkTitle);
             openLink(window, vaultFs, linkTitle);
-            return; // Found and handled
+            return true; // Found and handled
         }
     }
     console.log("[OpenLink] No link found at cursor position");
+    return false;
 }

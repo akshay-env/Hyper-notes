@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import "../../scripts/drag/handleDropPath.js" as HandleDrop
 import "../../scripts/navigation/pushHistory.js" as PushHistory
+import "../../scripts/tree/filterTree.js" as FilterTree
 
 Flickable {
     id: root
@@ -12,6 +13,13 @@ Flickable {
     interactive: true // Enables trackpad and wheel scrolling natively
 
     property var vaultFs: null
+
+    // Full tree normally; a filtered + auto-expanded copy while searching.
+    property var displayModel: {
+        var q = (window.treeSearchQuery || "").trim().toLowerCase();
+        if (q === "") return window.vaultTree;
+        return FilterTree.filterTree(window.vaultTree, q);
+    }
 
     Item {
         width: root.width
@@ -56,16 +64,16 @@ Flickable {
                     delegateComponent: folderDelegate
                     onItemClicked: (node) => {
                         // Opening a note from the sidebar leaves the graph view
-                        // and shows the note.
+                        // and shows the note (in its tab).
                         window.graphViewActive = false;
                         PushHistory.push(window, node);
-                        window.activeNote = node;
+                        window.openNoteInTab(node);
                     }
                 }
             }
 
             Repeater {
-                model: window.vaultTree
+                model: root.displayModel
                 delegate: Loader {
                     width: root.width
                     sourceComponent: folderDelegate

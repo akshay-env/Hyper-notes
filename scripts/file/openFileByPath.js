@@ -6,6 +6,6 @@ function openFileByPath(window, path) {
     let node = Search.search(window.vaultTree, path);
     if (node) {
         PushHistory.push(window, node);
-        window.activeNote = node;
+        window.openNoteInTab(node);
     }
 }

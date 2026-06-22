@@ -6,7 +6,8 @@ function goForward(window) {
     if (window.historyIndex < window.historyStack.length - 1) {
         window.historyIndex++;
         let node = window.historyStack[window.historyIndex];
-        // We set activeNote directly here to avoid triggering another push
-        window.activeNote = node;
+        // Route through tabs (does not push history), so back/forward focuses or
+        // reopens the note's tab.
+        window.openNoteInTab(node);
     }
 }

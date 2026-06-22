@@ -28,5 +28,16 @@ function buildGlobalGraph(allNotes, outLinks, titleToNode) {
         }
     }
 
+    // 3. Tally each node's degree (inbound + outbound links). Drives the
+    //    Obsidian-style size scaling in GraphNode.qml so hub notes look bigger.
+    let degree = {};
+    for (let i = 0; i < graphEdges.length; i++) {
+        degree[graphEdges[i].from] = (degree[graphEdges[i].from] || 0) + 1;
+        degree[graphEdges[i].to]   = (degree[graphEdges[i].to]   || 0) + 1;
+    }
+    for (let i = 0; i < graphNodes.length; i++) {
+        graphNodes[i].degree = degree[graphNodes[i].id] || 0;
+    }
+
     return { nodes: graphNodes, edges: graphEdges };
 }

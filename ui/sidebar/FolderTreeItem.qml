@@ -6,6 +6,8 @@ import "../../scripts/drag/handleDropPath.js" as HandleDrop
 import "../../scripts/drag/beginDragProxy.js" as BeginDrag
 import "../../scripts/drag/updateDragProxy.js" as UpdateDrag
 import "../../scripts/drag/endDragProxy.js" as EndDrag
+import "../../scripts/tree/flattenVisible.js" as FlattenVisible
+import "../../scripts/tree/selectionUtils.js" as SelUtil
 import ".."
 
 Item {
@@ -32,7 +34,7 @@ Item {
             isExpanded = false;
             childRepeater.model = [];
         }
-        isSelected = window.selectedNodes ? window.selectedNodes.indexOf(nodeData) !== -1 : false;
+        isSelected = (nodeData && window.selectedNodes) ? SelUtil.containsPath(window.selectedNodes, nodeData.path) : false;
     }
 
     Connections {
@@ -47,7 +49,7 @@ Item {
     Connections {
         target: window
         function onSelectedNodesChanged() {
-            root.isSelected = window.selectedNodes ? window.selectedNodes.indexOf(root.nodeData) !== -1 : false;
+            root.isSelected = (root.nodeData && window.selectedNodes) ? SelUtil.containsPath(window.selectedNodes, root.nodeData.path) : false;
         }
     }
 
@@ -214,17 +216,38 @@ Item {
                     return;
                 }
 
-                if (mouse.modifiers & Qt.ControlModifier) {
+                if (mouse.modifiers & Qt.ShiftModifier) {
+                    // Range select: from the anchor to the clicked item, inclusive,
+                    // in visible top-to-bottom order. Indices are resolved by path
+                    // because the anchor was captured from an earlier tree read and
+                    // won't share object identity with this fresh flatten.
+                    let anchorPath = (window.selectionAnchor && window.selectionAnchor.path)
+                                     ? window.selectionAnchor.path : root.nodeData.path;
+                    let visible = FlattenVisible.flattenVisible(window.vaultTree);
+                    let a = SelUtil.indexOfPath(visible, anchorPath);
+                    let b = SelUtil.indexOfPath(visible, root.nodeData.path);
+                    if (a === -1 || b === -1) {
+                        window.selectedNodes = [root.nodeData];
+                        window.selectionAnchor = root.nodeData;
+                    } else {
+                        let lo = Math.min(a, b);
+                        let hi = Math.max(a, b);
+                        window.selectedNodes = visible.slice(lo, hi + 1);
+                        // Leave the anchor in place so the range can be re-extended.
+                    }
+                } else if (mouse.modifiers & Qt.ControlModifier) {
                     let sel = [...window.selectedNodes];
-                    let idx = sel.indexOf(root.nodeData);
+                    let idx = SelUtil.indexOfPath(sel, root.nodeData.path);
                     if (idx !== -1) {
                         sel.splice(idx, 1);
                     } else {
                         sel.push(root.nodeData);
                     }
                     window.selectedNodes = sel;
+                    window.selectionAnchor = root.nodeData;
                 } else {
                     window.selectedNodes = [root.nodeData];
+                    window.selectionAnchor = root.nodeData;
 
                     if (root.nodeData && root.nodeData.isFolder) {
                         RunExpansionAnim.run(root);

@@ -20,6 +20,12 @@ Item {
     property real panX: 0
     property real panY: 0
     property real zoomFactor: 1.0
+    // Zoom range: 5% (far out) up to 500% (close in).
+    readonly property real minZoom: 0.05
+    readonly property real maxZoom: 5.0
+    // While true, the camera keeps the whole graph framed as the layout settles.
+    // Turns off the moment the user pans, zooms, or drags a node.
+    property bool autoFit: true
     property string hoveredNodePath: ""
     property var hoveredNeighbors: []
     // Non-empty while a node is being dragged: locks the highlight/dim state to
@@ -32,6 +38,15 @@ Item {
     // no main-thread FrameAnimation is needed.
     ForceSimulation {
         id: forceSimulation
+    }
+
+    // While the layout is settling (and the user hasn't grabbed the camera yet),
+    // refit on every physics tick so the whole graph stays framed.
+    Connections {
+        target: forceSimulation
+        function onPositionsUpdated() {
+            if (root.autoFit) root.fitToView();
+        }
     }
 
     // Node dimensions
@@ -63,6 +78,7 @@ Item {
         onActiveChanged: {
             if (active) {
                 lastPos = centroid.position;
+                root.autoFit = false;   // user took control of the camera
                 // Drop any active hover so the graph never freezes dimmed while panning
                 root.hoveredNodePath = "";
                 root.hoveredNeighbors = [];
@@ -84,8 +100,9 @@ Item {
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
 
         onWheel: (event) => {
+            root.autoFit = false;   // user took control of the camera
             let factor = event.angleDelta.y > 0 ? 1.12 : (1.0 / 1.12);
-            let newZoom = Math.max(0.15, Math.min(4.0, root.zoomFactor * factor));
+            let newZoom = Math.max(root.minZoom, Math.min(root.maxZoom, root.zoomFactor * factor));
 
             // Keep the graph point under the cursor fixed:
             // screen_pos = graph_pos * zoom + pan
@@ -132,6 +149,7 @@ Item {
                 nodeTitle: modelData.title
                 nodePath: modelData.path
                 nodeLayer: modelData.layer
+                nodeDegree: modelData.degree || 0
                 isActiveNote: window.activeNote && window.activeNote.path === modelData.path
                 
                 // Dynamic bindings that re-evaluate automatically when physics tick increments
@@ -148,6 +166,7 @@ Item {
                 // No reheat() per move — the worker keeps the sim warm via
                 // alphaTarget while pinned, and endDrag handles the settle.
                 onNodeDragStarted: (path) => {
+                    root.autoFit = false;   // user took control of the camera
                     forceSimulation.setNodePinned(path, true);
                     // Lock the highlight onto the dragged node for the whole drag
                     // so the dim/lit state stays steady no matter how fast it moves.
@@ -220,6 +239,9 @@ Item {
         root.panX = root.width / 2;
         root.panY = root.height / 2;
         root.zoomFactor = 1.0;
+        // Frame the whole graph by default; auto-fit tracks the layout as it
+        // settles until the user pans/zooms/drags.
+        root.autoFit = true;
 
         let data = GraphBuilder.buildGraphData(window, window.vaultFsRef);
 
@@ -227,5 +249,39 @@ Item {
         root.graphEdges = data.edges;
 
         forceSimulation.init(data.nodes, data.edges);
+    }
+
+    // Frames every node within the view, centered, with a margin. Clamped so a
+    // tiny graph isn't blown up past a comfortable zoom.
+    function fitToView() {
+        if (!graphNodes || graphNodes.length === 0) return;
+        if (root.width <= 0 || root.height <= 0) return;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let count = 0;
+        for (let i = 0; i < graphNodes.length; i++) {
+            let x = forceSimulation.getNodeX(graphNodes[i].path);
+            let y = forceSimulation.getNodeY(graphNodes[i].path);
+            if (!isFinite(x) || !isFinite(y)) continue;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            count++;
+        }
+        if (count === 0) return;
+
+        let pad = 90;
+        let contentW = Math.max(1, (maxX - minX) + pad * 2);
+        let contentH = Math.max(1, (maxY - minY) + pad * 2);
+
+        let z = Math.min(root.width / contentW, root.height / contentH);
+        z = Math.max(root.minZoom, Math.min(z, 1.2));   // never over-zoom a small graph
+
+        let cx = (minX + maxX) / 2;
+        let cy = (minY + maxY) / 2;
+        root.zoomFactor = z;
+        root.panX = root.width / 2 - cx * z;
+        root.panY = root.height / 2 - cy * z;
     }
 }

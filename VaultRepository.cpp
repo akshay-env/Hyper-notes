@@ -8,6 +8,10 @@
 #include "src/vault/ReadFile.h"
 #include "src/vault/SaveFile.h"
 #include "src/vault/DeleteItem.h"
+#include "src/vault/MoveToBin.h"
+#include "src/vault/GetBinTree.h"
+#include "src/vault/RestoreFromBin.h"
+#include "src/vault/DeleteFromBin.h"
 
 namespace HyperLinkNotes::Core {
 
@@ -54,6 +58,26 @@ bool VaultRepository::saveFile(const QString &path, const QString &content) cons
 bool VaultRepository::deleteItem(const QString &path) const
 {
     return Vault::deleteItem(path);
+}
+
+bool VaultRepository::moveToBin(const QString &vaultPath, const QString &itemPath) const
+{
+    return Vault::moveToBin(vaultPath, itemPath);
+}
+
+QVariantList VaultRepository::getBinTree(const QString &vaultPath) const
+{
+    return Vault::getBinTree(vaultPath);
+}
+
+bool VaultRepository::restoreFromBin(const QString &vaultPath, const QString &binItemPath) const
+{
+    return Vault::restoreFromBin(vaultPath, binItemPath);
+}
+
+bool VaultRepository::deleteFromBinPermanently(const QString &vaultPath, const QString &binItemPath) const
+{
+    return Vault::deleteFromBinPermanently(vaultPath, binItemPath);
 }
 
 } // namespace HyperLinkNotes::Core

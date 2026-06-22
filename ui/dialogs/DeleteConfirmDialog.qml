@@ -10,6 +10,7 @@ Dialog {
     title: "Delete Node"
     
     property string nodeName: ""
+    property int itemCount: 1
 
     background: Rectangle {
         color: "#1e1e1e"
@@ -19,7 +20,9 @@ Dialog {
     }
 
     contentItem: Text {
-        text: "Are you sure you want to delete '" + nodeName + "'?"
+        text: root.itemCount > 1
+              ? ("Are you sure you want to delete " + root.itemCount + " items?")
+              : ("Are you sure you want to delete '" + nodeName + "'?")
         color: "#ffffff"
         wrapMode: Text.WordWrap
     }
