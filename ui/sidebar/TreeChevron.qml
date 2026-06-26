@@ -1,4 +1,5 @@
 import QtQuick
+import HyperLinkNotes
 
 Item {
     id: root
@@ -15,7 +16,7 @@ Item {
         height: 12
         rotation: root.isExpanded ? 90 : 0
         z: 10
-        
+
         Behavior on rotation {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
@@ -23,7 +24,7 @@ Item {
         onPaint: {
             var ctx = getContext("2d");
             ctx.clearRect(0, 0, width, height);
-            ctx.strokeStyle = "#888888";
+            ctx.strokeStyle = Theme.textMuted;
             ctx.lineWidth = 2.0;
             ctx.lineCap = "round";
             ctx.lineJoin = "round";

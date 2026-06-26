@@ -1,23 +1,43 @@
 import QtQuick
 import QtQuick.Controls
+import HyperLinkNotes
 
 // Search box that drives window.treeSearchQuery (the file tree filters on it).
 Rectangle {
     id: root
     height: 32
     radius: 6
-    color: "#1b1b1b"
-    border.color: searchField.activeFocus ? "#3a3a55" : "#242424"
+    color: Theme.surface2
+    border.color: searchField.activeFocus ? Theme.accent : Theme.border
     border.width: 1
 
-    Text {
+    Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+    // Minimal monochrome magnifier (lens + handle), themed grey
+    Canvas {
         id: icon
         anchors.left: parent.left
-        anchors.leftMargin: 8
+        anchors.leftMargin: 9
         anchors.verticalCenter: parent.verticalCenter
-        text: "🔍"
-        font.pixelSize: 11
-        color: "#777777"
+        width: 14
+        height: 14
+        onPaint: {
+            var ctx = getContext("2d");
+            ctx.reset();
+            ctx.strokeStyle = searchField.activeFocus ? Theme.textDim : Theme.textMuted;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(5.5, 5.5, 4, 0, Math.PI * 2);   // lens
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(8.6, 8.6);                    // handle
+            ctx.lineTo(12.5, 12.5);
+            ctx.stroke();
+        }
+        Connections {
+            target: searchField
+            function onActiveFocusChanged() { icon.requestPaint(); }
+        }
     }
 
     Text {
@@ -27,7 +47,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         text: "×"
         font.pixelSize: 16
-        color: clearMouse.containsMouse ? "#cccccc" : "#777777"
+        color: clearMouse.containsMouse ? Theme.text : Theme.textMuted
         visible: window.treeSearchQuery !== ""
 
         MouseArea {
@@ -36,10 +56,19 @@ Rectangle {
             anchors.margins: -5
             hoverEnabled: true
             onClicked: {
+                debounce.stop();
                 window.treeSearchQuery = "";
                 searchField.text = "";
             }
         }
+    }
+
+    // Debounce: only filter once typing pauses, so each keystroke stays smooth.
+    Timer {
+        id: debounce
+        interval: 160
+        repeat: false
+        onTriggered: window.treeSearchQuery = searchField.text
     }
 
     TextField {
@@ -51,8 +80,8 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
 
         placeholderText: "Search notes & folders"
-        placeholderTextColor: "#555555"
-        color: "#dddddd"
+        placeholderTextColor: Theme.textFaint
+        color: Theme.text
         font.pixelSize: 12
         font.family: "Segoe UI"
         background: null
@@ -60,11 +89,12 @@ Rectangle {
         rightPadding: 0
         topPadding: 0
         bottomPadding: 0
-        selectionColor: "#25ffffff"
+        selectionColor: Theme.accent
         selectedTextColor: "#ffffff"
 
-        onTextEdited: window.treeSearchQuery = text
+        onTextEdited: debounce.restart()
         Keys.onEscapePressed: {
+            debounce.stop();
             window.treeSearchQuery = "";
             text = "";
         }

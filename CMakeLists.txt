@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Svg Network)
 qt_policy(SET QTP0001 NEW)
 
 qt_add_executable(appHyperLinkNotes
@@ -51,7 +51,11 @@ qt_add_executable(appHyperLinkNotes
     src/physics/PhysicsWorker.h
     src/graph/BuildEdgeGeometry.cpp
     src/graph/GraphRenderer.cpp
+    src/ai/LlmService.cpp
+    src/ai/LlmService.h
 )
+
+set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(appHyperLinkNotes
     URI HyperLinkNotes
@@ -59,12 +63,14 @@ qt_add_qml_module(appHyperLinkNotes
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES
         Main.qml
+        Theme.qml
         ui/core/TitleBar.qml
         ui/core/TabStrip.qml
         ui/core/NewTabView.qml
         ui/dialogs/CustomDialog.qml
         ui/components/IconButton.qml
-        ui/windows/BinWindow.qml
+        ui/core/BinPanel.qml
+        ui/core/SettingsPanel.qml
         ui/components/WindowControlButton.qml
         ui/components/SidebarToggleButton.qml
         ui/core/VaultSelectionOverlay.qml
@@ -77,6 +83,7 @@ qt_add_qml_module(appHyperLinkNotes
         ui/editor/EditorHeader.qml
         ui/editor/NoteTitle.qml
         ui/editor/NoteBody.qml
+        ui/editor/NotePicker.qml
         ui/sidebar/Sidebar.qml
         ui/sidebar/SidebarHeader.qml
         ui/sidebar/SidebarSearch.qml
@@ -93,7 +100,7 @@ qt_add_qml_module(appHyperLinkNotes
         scripts/tree/runExpansionAnimation.js
         scripts/tree/flattenVisible.js
         scripts/tree/selectionUtils.js
-        scripts/tree/filterTree.js
+        scripts/tree/searchFlat.js
         scripts/file/openFileByPath.js
         scripts/file/saveTitleNow.js
         scripts/file/createNewNote.js
@@ -107,6 +114,9 @@ qt_add_qml_module(appHyperLinkNotes
         scripts/editor/wrapSelectionInLink.js
         scripts/editor/createNoteFromSelection.js
         scripts/editor/openLink.js
+        scripts/editor/frontmatter.js
+        scripts/editor/buildContext.js
+        scripts/editor/branchNote.js
         scripts/navigation/pushHistory.js
         scripts/navigation/goBack.js
         scripts/navigation/goForward.js
@@ -126,13 +136,14 @@ qt_add_qml_module(appHyperLinkNotes
 )
 
 target_link_libraries(appHyperLinkNotes
-    PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Svg
+    PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Svg Qt6::Network
 )
 
 target_include_directories(appHyperLinkNotes PRIVATE
     .
     src/graph
     src/physics
+    src/ai
 )
 
 target_precompile_headers(appHyperLinkNotes PRIVATE

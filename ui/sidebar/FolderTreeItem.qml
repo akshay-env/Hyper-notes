@@ -8,6 +8,7 @@ import "../../scripts/drag/updateDragProxy.js" as UpdateDrag
 import "../../scripts/drag/endDragProxy.js" as EndDrag
 import "../../scripts/tree/flattenVisible.js" as FlattenVisible
 import "../../scripts/tree/selectionUtils.js" as SelUtil
+import HyperLinkNotes
 import ".."
 
 Item {
@@ -69,10 +70,12 @@ Item {
         id: itemBackground
         width: parent.width
         height: 32
-        color: root.isSelected ? "#2b4a6b" : (itemMouseArea.containsMouse || dropArea.containsDrag ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
-        border.color: root.isGraphHighlighted ? "#ffd700" : (dropArea.containsDrag ? "#007acc" : "transparent")
+        color: root.isSelected ? Theme.accentSoft : (itemMouseArea.containsMouse || dropArea.containsDrag ? Theme.overlayHover : "transparent")
+        border.color: root.isGraphHighlighted ? Theme.highlight : (dropArea.containsDrag ? Theme.accent : "transparent")
         border.width: root.isGraphHighlighted ? 2 : (dropArea.containsDrag ? 1 : 0)
         radius: 4
+
+        Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
         Repeater {
             model: root.depth > 0 ? root.depth : 0
@@ -109,7 +112,7 @@ Item {
 
             Text {
                 text: root.nodeData ? root.nodeData.name : ""
-                color: root.nodeData && root.nodeData.isFolder ? "#dddddd" : "#bbbbbb"
+                color: root.isSelected ? Theme.text : (root.nodeData && root.nodeData.isFolder ? Theme.text : Theme.textDim)
                 font.pixelSize: 13
                 font.family: "Segoe UI"
                 anchors.verticalCenter: parent.verticalCenter
@@ -212,7 +215,7 @@ Item {
 
             onClicked: (mouse) => {
                 if (mouse.button === Qt.RightButton) {
-                    contextMenuPopup.popup();
+                    contextMenuPopup.popupAt(mouse.x, mouse.y);
                     return;
                 }
 

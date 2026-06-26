@@ -1,19 +1,27 @@
 import QtQuick
+import HyperLinkNotes
 
 // Obsidian-style tab bar. Reads window.openTabs / window.activeTabIndex and
-// drives window.selectTab / closeTab / newTab.
+// drives window.selectTab / closeTab / newTab / moveTab.
+//
+// Tabs share one width that shrinks as more are opened so they always fit the
+// available space (down to a small minimum). Tabs can be dragged to reorder.
 Rectangle {
     id: root
-    color: "#101010"
+    // The bar sits a touch darker than the editor pane; the active tab matches
+    // the pane so it reads as one continuous surface (no seam under it).
+    color: Qt.darker(Theme.bg, 1.4)
     clip: true
 
-    // Bottom hairline separating the tabs from the editor
-    Rectangle {
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 1
-        color: "#1e1e1e"
+    readonly property int plusWidth: 34
+    readonly property int maxTabWidth: 180
+    readonly property int tabCount: window.openTabs.length
+
+    // One width for every tab; shrink to fit the strip (minus the + button).
+    readonly property real tabWidth: {
+        if (tabCount <= 0) return maxTabWidth;
+        var avail = root.width - plusWidth;
+        return Math.max(24, Math.min(maxTabWidth, avail / tabCount));
     }
 
     Row {
@@ -21,98 +29,154 @@ Rectangle {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.leftMargin: 8
         spacing: 0
 
         Repeater {
             model: window.openTabs
 
-            delegate: Rectangle {
-                id: tabDelegate
-                width: 180
+            delegate: Item {
+                id: tabItem
+                width: root.tabWidth
                 height: root.height
+                z: dragArea.dragging ? 100 : 1
+
                 property bool isActive: index === window.activeTabIndex
-                color: isActive ? "#1e1e1e"
-                                : (tabHover.containsMouse ? "#181818" : "transparent")
+                // Hide the close button on tiny inactive tabs to save room.
+                property bool showClose: root.tabWidth >= 64 || isActive
 
-                // Right divider
                 Rectangle {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 1
-                    height: parent.height * 0.5
-                    color: "#2a2a2a"
-                }
+                    id: content
+                    width: parent.width
+                    height: parent.height
+                    x: 0
+                    // Active tab matches the editor pane so they merge into a
+                    // single surface; inactive tabs stay on the darker bar.
+                    color: tabItem.isActive ? Theme.bg
+                                            : (dragArea.containsMouse ? Theme.surface : "transparent")
+                    opacity: dragArea.dragging ? 0.85 : 1.0
 
-                // Active-tab top accent
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: "#a882ff"
-                    visible: tabDelegate.isActive
-                }
+                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 12
-                    anchors.right: closeBtn.left
-                    anchors.rightMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: (modelData.name && modelData.name !== "") ? modelData.name : "New tab"
-                    color: tabDelegate.isActive ? "#e0e0e0" : "#9a9a9a"
-                    font.pixelSize: 12
-                    font.family: "Segoe UI"
-                    elide: Text.ElideRight
-                }
+                    // Right divider (hidden on the active tab)
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 1
+                        height: parent.height * 0.5
+                        color: Theme.border
+                        visible: !tabItem.isActive
+                    }
 
-                // Close (×)
-                Rectangle {
-                    id: closeBtn
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 18
-                    height: 18
-                    radius: 3
-                    color: closeHover.containsMouse ? "#333333" : "transparent"
+                    // Active-tab top accent
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 2
+                        color: Theme.accent
+                        visible: tabItem.isActive
+                    }
 
                     Text {
-                        anchors.centerIn: parent
-                        text: "×"
-                        color: "#bbbbbb"
-                        font.pixelSize: 15
+                        anchors.left: parent.left
+                        anchors.leftMargin: 10
+                        anchors.right: closeBtn.visible ? closeBtn.left : parent.right
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: (modelData.name && modelData.name !== "") ? modelData.name : "New tab"
+                        color: tabItem.isActive ? Theme.text : Theme.textDim
+                        font.pixelSize: 12
+                        font.family: "Segoe UI"
+                        elide: Text.ElideRight
+
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
                     }
 
-                    MouseArea {
-                        id: closeHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onClicked: window.closeTab(index)
+                    Rectangle {
+                        id: closeBtn
+                        visible: tabItem.showClose
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16
+                        height: 16
+                        radius: 3
+                        color: closeHover.containsMouse ? Theme.elevated : "transparent"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: closeHover.containsMouse ? Theme.text : Theme.textDim
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            id: closeHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: window.closeTab(index)
+                        }
                     }
                 }
 
+                // Drag to reorder + click to select. The rightmost strip is left
+                // uncovered so the close button stays clickable.
                 MouseArea {
-                    id: tabHover
+                    id: dragArea
                     anchors.fill: parent
-                    anchors.rightMargin: 26   // keep the close button clickable
+                    anchors.rightMargin: tabItem.showClose ? 24 : 0
                     hoverEnabled: true
-                    onClicked: window.selectTab(index)
+
+                    property real pressX: 0
+                    property bool dragging: false
+                    property int targetIndex: index
+
+                    onPressed: (mouse) => {
+                        pressX = mouse.x;
+                        dragging = false;
+                        targetIndex = index;
+                    }
+
+                    onPositionChanged: (mouse) => {
+                        if (!(mouse.buttons & Qt.LeftButton)) return;
+                        var dx = mouse.x - pressX;
+                        if (!dragging && Math.abs(dx) > 6) dragging = true;
+                        if (dragging) {
+                            content.x = dx;
+                            var centerInRow = tabItem.x + content.x + content.width / 2;
+                            var ti = Math.floor(centerInRow / root.tabWidth);
+                            ti = Math.max(0, Math.min(window.openTabs.length - 1, ti));
+                            targetIndex = ti;
+                        }
+                    }
+
+                    onReleased: {
+                        if (dragging) {
+                            content.x = 0;
+                            dragging = false;
+                            if (targetIndex !== index) window.moveTab(index, targetIndex);
+                        }
+                    }
+
+                    onClicked: {
+                        if (!dragging) window.selectTab(index);
+                    }
                 }
             }
         }
 
         // New-tab (+) button
         Rectangle {
-            width: 34
+            width: root.plusWidth
             height: root.height
-            color: plusHover.containsMouse ? "#181818" : "transparent"
+            color: plusHover.containsMouse ? Theme.surface : "transparent"
+
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
             Text {
                 anchors.centerIn: parent
                 text: "+"
-                color: "#aaaaaa"
+                color: plusHover.containsMouse ? Theme.text : Theme.textDim
                 font.pixelSize: 18
             }
 

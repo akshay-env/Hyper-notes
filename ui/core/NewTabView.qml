@@ -1,4 +1,5 @@
 import QtQuick
+import HyperLinkNotes
 import "../../scripts/file/createNoteInRoot.js" as CreateNoteInRoot
 
 // Shown for an empty tab. "Create new note" adds a note in the vault root and
@@ -16,16 +17,18 @@ Item {
             width: createText.implicitWidth + 30
             height: 34
             radius: 6
-            color: createHover.containsMouse ? "#2a2350" : "#1d1830"
-            border.color: "#3a3370"
-            border.width: 1
+            color: createHover.containsMouse ? Theme.accentHover : Theme.accent
+            border.width: 0
+
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
             Text {
                 id: createText
                 anchors.centerIn: parent
                 text: "Create new note"
-                color: "#c9baff"
+                color: "#ffffff"
                 font.pixelSize: 13
+                font.bold: true
                 font.family: "Segoe UI"
             }
 
@@ -42,15 +45,17 @@ Item {
             width: closeText.implicitWidth + 30
             height: 34
             radius: 6
-            color: closeHover.containsMouse ? "#1d1d1d" : "transparent"
-            border.color: "#2a2a2a"
+            color: closeHover.containsMouse ? Theme.elevated : "transparent"
+            border.color: Theme.border
             border.width: 1
+
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
             Text {
                 id: closeText
                 anchors.centerIn: parent
                 text: "Close"
-                color: "#9aa0ff"
+                color: Theme.textDim
                 font.pixelSize: 13
                 font.family: "Segoe UI"
             }

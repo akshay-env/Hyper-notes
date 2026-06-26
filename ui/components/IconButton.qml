@@ -1,23 +1,26 @@
 import QtQuick
 import QtQuick.Controls
+import HyperLinkNotes
 
 Rectangle {
     id: root
-    
+
     property color defaultColor: "transparent"
     property color hoverColor: Qt.rgba(1, 1, 1, 0.05)
     property color pressedColor: Qt.rgba(1, 1, 1, 0.1)
     property alias containsMouse: mouseArea.containsMouse
-    
+
     property string iconText: ""
     property string tooltipText: ""
     property int iconSize: 14
     property bool iconBold: false
-    
+
     color: mouseArea.pressed ? pressedColor : (mouseArea.containsMouse ? hoverColor : defaultColor)
     radius: 4
     implicitWidth: 28
     implicitHeight: 28
+
+    Behavior on color { ColorAnimation { duration: Theme.animFast } }
     
     ToolTip.visible: tooltipText !== "" && mouseArea.containsMouse
     ToolTip.text: tooltipText
@@ -35,7 +38,7 @@ Rectangle {
         Text {
             anchors.centerIn: parent
             text: root.iconText
-            color: "#cccccc"
+            color: Theme.textDim
             font.pixelSize: root.iconSize
             font.bold: root.iconBold
             visible: root.iconText !== ""

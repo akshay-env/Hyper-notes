@@ -1,14 +1,15 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import HyperLinkNotes
 import "../../scripts/file/saveTitleNow.js" as SaveTitle
 
 TextField {
     id: noteTitle
     readOnly: false
     placeholderText: "Untitled"
-    placeholderTextColor: "#444444"
-    color: nameAvailable ? "#ffffff" : "#ff4444"
+    placeholderTextColor: Theme.textFaint
+    color: nameAvailable ? Theme.text : Theme.danger
     font.pixelSize: 28
     font.bold: true
     font.family: "Segoe UI"
@@ -17,7 +18,7 @@ TextField {
     rightPadding: 0
     topPadding: 0
     bottomPadding: 0
-    selectionColor: "#25ffffff"
+    selectionColor: Theme.accentSoftHi
     selectedTextColor: "#ffffff"
     focus: true
 

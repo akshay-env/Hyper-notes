@@ -19,11 +19,18 @@ void PhysicsWorker::start()
 {
     if (!m_timer) {
         m_timer = new QTimer(this);          // created in the worker thread
-        m_timer->setInterval(16);            // ~60 Hz
+        m_timer->setInterval(m_intervalMs);
         connect(m_timer, &QTimer::timeout, this, &PhysicsWorker::tick);
     }
     if (!m_timer->isActive())
         m_timer->start();
+}
+
+void PhysicsWorker::setTickInterval(int ms)
+{
+    m_intervalMs = qBound(1, ms, 100);
+    if (m_timer)
+        m_timer->setInterval(m_intervalMs);
 }
 
 void PhysicsWorker::stop()
@@ -85,27 +92,83 @@ void PhysicsWorker::setup(const QVariantList& nodes, const QVariantList& edges)
 
     // d3-force link force: precompute per-edge strength and bias from node degree.
     // Without this, a hub with N links accumulates ~N× the spring force each tick,
-    // which is numerically unstable (energy grows exponentially while the sim is
-    // held warm during a drag). Normalizing by degree bounds it — exactly d3.
-    {
-        QVector<int> degree(m_nodes.size(), 0);
-        for (const PhysicsEdge& e : m_edges) {
-            ++degree[e.sourceIndex];
-            ++degree[e.targetIndex];
-        }
-        for (PhysicsEdge& e : m_edges) {
-            const int ds = degree[e.sourceIndex];
-            const int dt = degree[e.targetIndex];
-            e.strength = 1.0f / static_cast<float>(qMax(1, qMin(ds, dt)));
-            e.bias     = static_cast<float>(ds) / static_cast<float>(qMax(1, ds + dt));
-        }
-    }
+    // which is numerically unstable. Normalizing by degree bounds it — exactly d3.
+    recomputeEdgeParams();
 
     m_alpha = 1.0f;
     m_alphaTarget = 0.0f;
     writeSnapshot();
     if (m_syncPending.testAndSetOrdered(0, 1))
         emit positionsReady();   // render the initial layout immediately
+    start();
+}
+
+void PhysicsWorker::recomputeEdgeParams()
+{
+    QVector<int> degree(m_nodes.size(), 0);
+    for (const PhysicsEdge& e : m_edges) {
+        ++degree[e.sourceIndex];
+        ++degree[e.targetIndex];
+    }
+    for (PhysicsEdge& e : m_edges) {
+        const int ds = degree[e.sourceIndex];
+        const int dt = degree[e.targetIndex];
+        e.strength = 1.0f / static_cast<float>(qMax(1, qMin(ds, dt)));
+        e.bias     = static_cast<float>(ds) / static_cast<float>(qMax(1, ds + dt));
+    }
+}
+
+void PhysicsWorker::clear()
+{
+    if (m_timer) m_timer->stop();
+    m_nodes.clear();
+    m_edges.clear();
+    m_idToIndex.clear();
+    m_alpha = 0.0f;
+    m_alphaTarget = 0.0f;
+    {
+        QMutexLocker lock(&m_mutex);
+        m_sharedPos.clear();
+    }
+    if (m_syncPending.testAndSetOrdered(0, 1))
+        emit positionsReady();
+}
+
+void PhysicsWorker::addNodes(const QVariantList& nodes, const QVariantList& edges)
+{
+    for (const QVariant& nv : nodes) {
+        QVariantMap nm = nv.toMap();
+        PhysicsNode pn;
+        pn.id = nm.value("id").toString();
+        if (pn.id.isEmpty() || m_idToIndex.contains(pn.id))
+            continue;
+        pn.x = nm.value("x").toFloat();
+        pn.y = nm.value("y").toFloat();
+        m_idToIndex.insert(pn.id, m_nodes.size());
+        m_nodes.push_back(pn);
+    }
+
+    for (const QVariant& ev : edges) {
+        QVariantMap em = ev.toMap();
+        const QString from = em.value("from").toString();
+        const QString to   = em.value("to").toString();
+        if (m_idToIndex.contains(from) && m_idToIndex.contains(to)) {
+            PhysicsEdge pe;
+            pe.sourceIndex = m_idToIndex.value(from);
+            pe.targetIndex = m_idToIndex.value(to);
+            m_edges.push_back(pe);
+        }
+    }
+
+    recomputeEdgeParams();
+
+    // Keep the sim warm so freshly dropped nodes fly into place, without slamming
+    // the whole graph back to full energy on every batch (which looks jittery).
+    m_alpha = qMax(m_alpha, 0.6f);
+    m_alphaTarget = 0.0f;
+    writeSnapshot();
+    if (m_syncPending.testAndSetOrdered(0, 1))
+        emit positionsReady();
     start();
 }
 

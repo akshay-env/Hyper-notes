@@ -43,6 +43,9 @@ public slots:
     void beginDrag(const QString& id);  // pin the node + hold the sim warm (once)
     void endDrag(const QString& id);    // unpin the node + let the sim settle (once)
     void reheat();
+    void setTickInterval(int ms);       // match the display refresh rate
+    void clear();                                                  // empty the graph
+    void addNodes(const QVariantList& nodes, const QVariantList& edges);  // incremental build
 
 signals:
     void positionsReady();
@@ -50,13 +53,15 @@ signals:
 private:
     void tick();
     void writeSnapshot();
-    void applyDragTarget();   // pull the coalesced drag target into m_nodes
+    void applyDragTarget();      // pull the coalesced drag target into m_nodes
+    void recomputeEdgeParams();  // d3 per-edge strength/bias from node degree
 
     QVector<Physics::PhysicsNode> m_nodes;   // authoritative — worker thread only
     QVector<Physics::PhysicsEdge> m_edges;
     QHash<QString, int> m_idToIndex;
 
     QTimer* m_timer = nullptr;
+    int m_intervalMs = 16;   // ~60 Hz default; updated to match the display
 
     // d3-force alpha integration: alpha eases toward alphaTarget every tick.
     // alphaTarget is 0 normally (cools to rest) and 0.3 while dragging (stays warm).

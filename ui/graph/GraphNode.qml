@@ -1,4 +1,5 @@
 import QtQuick
+import HyperLinkNotes
 
 Item {
     id: root
@@ -14,10 +15,14 @@ Item {
     property real targetX: 0
     property real targetY: 0
 
-    // Hover state — set by GraphView
+    // Highlight state — set by GraphView.
+    // isFocus: this node is open in a tab. isNeighbor: first neighbour of a
+    // focused node (tab or hovered). anyActive: any highlighting is in effect
+    // (tabs open or hovering) → non-lit nodes dim.
     property bool isHovered:  false
+    property bool isFocus:    false
     property bool isNeighbor: false
-    property bool anyHovered: false
+    property bool anyActive:  false
 
     signal nodeClicked(string path)
     signal nodeHoverEntered(string path)
@@ -32,7 +37,7 @@ Item {
     // The active note keeps a small constant bump on top.
     readonly property int dotRadius: {
         var base = isActiveNote ? 8 : 6;
-        var boost = Math.min(3.5 * Math.log2(1 + nodeDegree), 16);
+        var boost = Math.min(5.0 * Math.log2(1 + nodeDegree), 22);
         return Math.round(base + boost);
     }
 
@@ -43,16 +48,13 @@ Item {
     height: dotRadius * 2 + 5 + titleLabel.implicitHeight
     z: isHovered ? 3 : 2
 
-    // ── Bloom entrance animation ─────────────────────────────────────────────
+    // ── Entrance fade ────────────────────────────────────────────────────────
+    // Quick, uniform fade-in (no per-layer stagger) so every node appears at once
+    // and in sync with the edges — snappy instead of trickling in over a second.
     property real bloomOpacity: 0.0
     opacity: bloomOpacity
-    Behavior on bloomOpacity { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
-
-    Timer {
-        interval: Math.min(root.nodeLayer === 999 ? 7 : root.nodeLayer, 7) * 130
-        running: true; repeat: false
-        onTriggered: root.bloomOpacity = 1.0
-    }
+    Behavior on bloomOpacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+    Component.onCompleted: bloomOpacity = 1.0
 
     // ── Dot circle (top-center of Item) ─────────────────────────────────────
     Rectangle {
@@ -64,17 +66,17 @@ Item {
         radius: root.dotRadius
 
         color: {
-            if (root.isHovered)    return "#ffffff"
-            if (root.isActiveNote) return "#a882ff"
-            if (root.isNeighbor)   return "#dadada"
-            return "#b3b3b3"
+            if (root.isHovered)                    return Theme.nodeHi
+            if (root.isActiveNote || root.isFocus) return Theme.nodeActive
+            if (root.isNeighbor)                   return Theme.nodeNeighbor
+            return Theme.node
         }
         opacity: {
-            if (!root.anyHovered)  return 1.0
-            if (root.isHovered || root.isNeighbor) return 1.0
+            if (!root.anyActive)   return 1.0
+            if (root.isHovered || root.isFocus || root.isActiveNote || root.isNeighbor) return 1.0
             return 0.14
         }
-        scale: root.isHovered ? 1.3 : (root.isNeighbor ? 1.1 : 1.0)
+        scale: root.isHovered ? 1.3 : ((root.isFocus || root.isNeighbor) ? 1.1 : 1.0)
 
         Behavior on opacity { NumberAnimation { duration: 150 } }
         Behavior on scale   { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
@@ -89,23 +91,27 @@ Item {
         anchors.topMargin: 5
         text: root.nodeTitle
         color: {
-            if (root.isHovered)    return "#ffffff"
-            if (root.isNeighbor)   return "#dadada"
-            if (root.isActiveNote) return "#c9baff"
-            return "#b3b3b3"
+            if (root.isHovered)                    return Theme.nodeHi
+            if (root.isActiveNote || root.isFocus) return Theme.accentText
+            if (root.isNeighbor)                   return Theme.nodeNeighbor
+            return Theme.node
         }
         opacity: {
-            if (!root.anyHovered)  return 1.0
-            if (root.isHovered)    return 1.0
-            if (root.isNeighbor)   return 1.0
+            if (!root.anyActive)   return 1.0
+            if (root.isHovered || root.isFocus || root.isActiveNote || root.isNeighbor) return 1.0
             return 0.14
         }
         font.pixelSize: 11
-        font.bold: root.isHovered || root.isActiveNote
+        font.bold: root.isHovered || root.isActiveNote || root.isFocus
         font.family: "Segoe UI"
+
+        // Pop the label out a little on hover so it stands above its neighbours
+        transformOrigin: Item.Top
+        scale: root.isHovered ? 1.28 : 1.0
 
         Behavior on opacity { NumberAnimation { duration: 150 } }
         Behavior on color   { ColorAnimation  { duration: 150 } }
+        Behavior on scale   { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
     }
 
     // ── Mouse interaction (hit area around dot only) ─────────────────────────

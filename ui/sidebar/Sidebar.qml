@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import HyperLinkNotes
 import "../../scripts/tree/refreshTree.js" as RefreshTree
 import "../../scripts/file/openFileByPath.js" as OpenFile
 import "../../scripts/window/openNewFolderDialog.js" as OpenFolderDialog
@@ -9,7 +10,7 @@ import "../../scripts/file/createNewNote.js" as CreateNote
 Rectangle {
     id: root
     width: window.sidebarOpen ? window.sidebarWidth : 0
-    color: "#141414"
+    color: Theme.surface
     clip: true
 
     // Smooth sliding transition
@@ -23,7 +24,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: 1
-        color: "#1e1e1e"
+        color: Theme.divider
     }
 
     // Resizer handle on the right edge
@@ -89,15 +90,21 @@ Rectangle {
             vaultFs: window.vaultFsRef
         }
 
-        // Bin tile — pinned to the bottom of the sidebar
+        // Bottom bar — Bin tile + Settings gear, pinned to the bottom
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+
         Rectangle {
             id: binTile
             Layout.fillWidth: true
             Layout.preferredHeight: 40
             radius: 6
-            color: binMouse.containsMouse ? "#1f1f1f" : "#181818"
-            border.color: "#262626"
+            color: binMouse.containsMouse ? Theme.elevated : Theme.surface2
+            border.color: Theme.border
             border.width: 1
+
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
             Row {
                 anchors.left: parent.left
@@ -105,14 +112,33 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
 
-                Text {
-                    text: "🗑"
-                    font.pixelSize: 14
+                // Minimal trash glyph
+                Canvas {
+                    width: 14
+                    height: 14
                     anchors.verticalCenter: parent.verticalCenter
+                    property color tint: binMouse.containsMouse ? Theme.text : Theme.textDim
+                    onTintChanged: requestPaint()
+                    onPaint: {
+                        var ctx = getContext("2d");
+                        ctx.reset();
+                        ctx.strokeStyle = tint;
+                        ctx.lineWidth = 1.3;
+                        ctx.lineJoin = "round";
+                        // lid
+                        ctx.beginPath();
+                        ctx.moveTo(2, 3.5); ctx.lineTo(12, 3.5);
+                        ctx.moveTo(5.5, 3.5); ctx.lineTo(5.5, 2); ctx.lineTo(8.5, 2); ctx.lineTo(8.5, 3.5);
+                        ctx.stroke();
+                        // can
+                        ctx.beginPath();
+                        ctx.moveTo(3, 3.5); ctx.lineTo(3.8, 12.5); ctx.lineTo(10.2, 12.5); ctx.lineTo(11, 3.5);
+                        ctx.stroke();
+                    }
                 }
                 Text {
                     text: "Bin"
-                    color: "#cccccc"
+                    color: Theme.textDim
                     font.pixelSize: 12
                     font.family: "Segoe UI"
                     anchors.verticalCenter: parent.verticalCenter
@@ -125,6 +151,53 @@ Rectangle {
                 hoverEnabled: true
                 onClicked: window.openBin()
             }
+        }
+
+        // Settings gear
+        Rectangle {
+            id: settingsTile
+            Layout.preferredWidth: 44
+            Layout.preferredHeight: 40
+            radius: 6
+            color: settingsMouse.containsMouse ? Theme.elevated : Theme.surface2
+            border.color: Theme.border
+            border.width: 1
+
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+            Canvas {
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                property color tint: settingsMouse.containsMouse ? Theme.text : Theme.textDim
+                onTintChanged: requestPaint()
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.reset();
+                    ctx.strokeStyle = tint;
+                    ctx.lineWidth = 1.3;
+                    ctx.lineJoin = "round";
+                    var cx = width / 2, cy = height / 2;
+                    var rBody = 4.1, rTeeth = 6.4;
+                    ctx.beginPath(); ctx.arc(cx, cy, rBody, 0, 2 * Math.PI); ctx.stroke();
+                    ctx.beginPath(); ctx.arc(cx, cy, 1.7, 0, 2 * Math.PI); ctx.stroke();
+                    for (var i = 0; i < 8; i++) {
+                        var a = i * Math.PI / 4;
+                        ctx.beginPath();
+                        ctx.moveTo(cx + Math.cos(a) * rBody, cy + Math.sin(a) * rBody);
+                        ctx.lineTo(cx + Math.cos(a) * rTeeth, cy + Math.sin(a) * rTeeth);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            MouseArea {
+                id: settingsMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: window.openSettings()
+            }
+        }
         }
     }
 }

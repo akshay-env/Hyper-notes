@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import HyperLinkNotes
 
 Rectangle {
     id: root
@@ -17,8 +18,9 @@ Rectangle {
     property color titleColor: "#ffffff"
     property string messageText: "Are you sure?"
     property string confirmButtonText: "Confirm"
-    property color confirmButtonColor: "#0066cc"
-    property color confirmButtonHoverColor: "#0077ee"
+    property color confirmButtonColor: Theme.accent
+    property color confirmButtonHoverColor: Theme.accentHover
+    property color confirmButtonTextColor: Theme.bg
 
     signal confirmed()
     signal cancelled()
@@ -82,7 +84,7 @@ Rectangle {
                     id: confirmText
                     anchors.centerIn: parent
                     text: root.confirmButtonText
-                    color: "#ffffff"
+                    color: root.confirmButtonTextColor
                     font.bold: true
                 }
 

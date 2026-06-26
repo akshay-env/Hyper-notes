@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import HyperLinkNotes
 import "../../scripts/navigation/goBack.js" as GoBack
 import "../../scripts/navigation/goForward.js" as GoForward
 import "../components"
@@ -20,7 +21,7 @@ Rectangle {
         Text {
             id: breadcrumbText
             Layout.fillWidth: true
-            color: "#888888"
+            color: Theme.textDim
             font.pixelSize: 13
             font.family: "Segoe UI"
             elide: Text.ElideLeft
@@ -76,7 +77,7 @@ Rectangle {
         Rectangle {
             width: 1
             height: 20
-            color: "#2c2c2c"
+            color: Theme.border
         }
 
         // Graph View toggle button
@@ -84,12 +85,42 @@ Rectangle {
             implicitWidth: 36
             implicitHeight: 36
             tooltipText: window.graphViewActive ? "Close Graph View" : "Graph View"
-            iconText: "⚯"
-            iconSize: 18
             opacity: window.graphViewActive ? 1.0 : 0.7
-            defaultColor: window.graphViewActive ? Qt.rgba(0.3, 0.4, 0.8, 0.25) : "transparent"
+            defaultColor: window.graphViewActive ? Theme.accentSoft : "transparent"
             onClicked: {
                 window.graphViewActive = !window.graphViewActive;
+            }
+
+            // Mini knowledge-graph glyph: a hub node linked to three satellites
+            Canvas {
+                anchors.centerIn: parent
+                width: 22
+                height: 22
+                property color tint: window.graphViewActive ? Theme.accentText : Theme.textDim
+                onTintChanged: requestPaint()
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.reset();
+                    ctx.strokeStyle = tint;
+                    ctx.fillStyle = tint;
+                    ctx.lineWidth = 1.4;
+
+                    var nodes = [[11, 12], [11, 3], [4, 18], [18, 18]];
+                    var radii = [3.2, 2.4, 2.4, 2.4];
+
+                    ctx.beginPath();
+                    for (var i = 1; i < nodes.length; i++) {
+                        ctx.moveTo(nodes[0][0], nodes[0][1]);
+                        ctx.lineTo(nodes[i][0], nodes[i][1]);
+                    }
+                    ctx.stroke();
+
+                    for (var j = 0; j < nodes.length; j++) {
+                        ctx.beginPath();
+                        ctx.arc(nodes[j][0], nodes[j][1], radii[j], 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
             }
         }
     }

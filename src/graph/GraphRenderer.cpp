@@ -56,11 +56,11 @@ void GraphRenderer::setZoomFactor(float zoomFactor) {
     update();
 }
 
-QString GraphRenderer::highlightNodeId() const { return m_highlightNodeId; }
-void GraphRenderer::setHighlightNodeId(const QString& id) {
-    if (m_highlightNodeId == id) return;
-    m_highlightNodeId = id;
-    emit highlightNodeIdChanged();
+QStringList GraphRenderer::highlightNodeIds() const { return m_highlightNodeIds; }
+void GraphRenderer::setHighlightNodeIds(const QStringList& ids) {
+    if (m_highlightNodeIds == ids) return;
+    m_highlightNodeIds = ids;
+    emit highlightNodeIdsChanged();
     update();
 }
 
@@ -81,7 +81,7 @@ QSGNode *GraphRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         dimNode->setGeometry(dimGeo);
         dimNode->setFlag(QSGNode::OwnsGeometry);
         QSGFlatColorMaterial *dimMat = new QSGFlatColorMaterial;
-        dimMat->setColor(QColor(63, 63, 63, 160)); // Obsidian --graph-line: #3f3f3f
+        dimMat->setColor(QColor(58, 62, 74, 170)); // muted line matching Theme.border
         dimNode->setMaterial(dimMat);
         dimNode->setFlag(QSGNode::OwnsMaterial);
         root->appendChildNode(dimNode);
@@ -94,7 +94,7 @@ QSGNode *GraphRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         hiNode->setGeometry(hiGeo);
         hiNode->setFlag(QSGNode::OwnsGeometry);
         QSGFlatColorMaterial *hiMat = new QSGFlatColorMaterial;
-        hiMat->setColor(QColor(168, 130, 255, 235)); // Obsidian accent #a882ff
+        hiMat->setColor(QColor(255, 210, 63, 240)); // Theme.accent #ffd23f
         hiNode->setMaterial(hiMat);
         hiNode->setFlag(QSGNode::OwnsMaterial);
         root->appendChildNode(hiNode);
@@ -104,7 +104,13 @@ QSGNode *GraphRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     }
 
     if (m_simulation) {
-        const int hi = m_simulation->indexForId(m_highlightNodeId); // -1 when nothing hovered
+        // Resolve the highlight set (open tabs ∪ hovered) to node indices. Empty
+        // when nothing is focused → every edge falls in the dim pass (normal look).
+        QSet<int> hi;
+        for (const QString& id : m_highlightNodeIds) {
+            const int idx = m_simulation->indexForId(id);
+            if (idx >= 0) hi.insert(idx);
+        }
         buildEdgeGeometry(dimNode->geometry(), m_simulation->nodes(), m_simulation->edges(),
                           m_panX, m_panY, m_zoomFactor, hi, /*wantTouching*/ false);
         buildEdgeGeometry(hiNode->geometry(),  m_simulation->nodes(), m_simulation->edges(),

@@ -10,7 +10,6 @@ import "ui/core"
 import "ui/dialogs"
 import "ui/sidebar"
 import "ui/editor"
-import "ui/windows"
 import "ui/graph"
 import "scripts/window/toggleMaximize.js" as ToggleMaximize
 import "scripts/window/deleteNodePermanently.js" as DeleteNode
@@ -32,7 +31,7 @@ ApplicationWindow {
     x: screenAvailableX + (screenAvailableWidth - width) / 2
     y: screenAvailableY + (screenAvailableHeight - height) / 2
     visible: true
-    color: "#121212"
+    color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
 
     // Custom properties
@@ -43,6 +42,8 @@ ApplicationWindow {
     property int historyIndex: -1
     property bool graphViewActive: false
     property string graphHighlightPath: ""
+    property bool binOpen: false
+    property bool settingsOpen: false
 
     // ── Tabs ────────────────────────────────────────────────────────────────
     // Each tab is { path, name }. An empty tab has path === "" and shows the
@@ -68,6 +69,10 @@ ApplicationWindow {
     property var vaultTree: []
     // Sidebar search query; filters the file tree when non-empty.
     property string treeSearchQuery: ""
+    // Plain-JS mirror of vaultTree, rebuilt only when the tree changes. Filtering
+    // the live QVariantList per keystroke is slow (every property read re-wraps
+    // a QVariant); converting once and searching pure JS keeps search snappy.
+    property var vaultTreeJS: toJsTree(vaultTree)
 
     // Maximize simulation properties
     property bool isMaximized: false
@@ -84,6 +89,23 @@ ApplicationWindow {
     // Aliases to avoid refactoring all components that access dragVisualProxy directly
     property alias dragVisualProxy: dragOverlay
     property alias newFolderDialog: newFolderDialog
+
+    // Deep-copies the QVariant tree into plain JS objects once (see vaultTreeJS).
+    function toJsTree(nodes) {
+        var out = [];
+        if (!nodes) return out;
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            out.push({
+                "name": n.name,
+                "path": n.path,
+                "isFolder": n.isFolder === true,
+                "expanded": n.expanded === true,
+                "children": (n.isFolder === true) ? toJsTree(n.children) : []
+            });
+        }
+        return out;
+    }
 
     // ── Tab operations ──────────────────────────────────────────────────────
     function tabLabel(node) {
@@ -116,6 +138,20 @@ ApplicationWindow {
                 activeTabIndex = tabs.length - 1;
             }
         }
+        activeNote = node;
+    }
+
+    // Always opens the note in a NEW tab (focusing it if it's already open).
+    // Used by the multi-link hover card's "Open all in tabs".
+    function openNoteInNewTab(node) {
+        if (!node) return;
+        var p = node.path || "";
+        var i = tabIndexOfPath(p);
+        if (i !== -1) { activeTabIndex = i; activeNote = node; return; }
+        var tabs = openTabs.slice();
+        tabs.push({ "path": p, "name": tabLabel(node) });
+        openTabs = tabs;
+        activeTabIndex = tabs.length - 1;
         activeNote = node;
     }
 
@@ -162,6 +198,22 @@ ApplicationWindow {
         if (i !== -1) closeTab(i);
     }
 
+    // Reorders a tab (drag-and-drop), keeping the same tab active.
+    function moveTab(from, to) {
+        if (from === to) return;
+        if (from < 0 || from >= openTabs.length || to < 0 || to >= openTabs.length) return;
+        var activeTab = (activeTabIndex >= 0 && activeTabIndex < openTabs.length)
+                        ? openTabs[activeTabIndex] : null;
+        var tabs = openTabs.slice();
+        var moved = tabs.splice(from, 1)[0];
+        tabs.splice(to, 0, moved);
+        openTabs = tabs;
+        if (activeTab) {
+            var ni = tabs.indexOf(activeTab);   // tab objects are plain JS — identity is stable
+            if (ni !== -1) activeTabIndex = ni;
+        }
+    }
+
     // Keeps the active tab's label/path in sync after the open note is renamed.
     function updateActiveTabLabel(p, name) {
         if (activeTabIndex < 0 || activeTabIndex >= openTabs.length) return;
@@ -171,13 +223,38 @@ ApplicationWindow {
     }
 
     function openBin() {
-        binWindow.show();
+        binOpen = true;
     }
+
+    function openSettings() {
+        settingsOpen = true;
+    }
+
+    // Start with a single empty tab so the new-tab view is the default startup view.
+    Component.onCompleted: newTab()
 
     Settings {
         id: appSettings
         property string vaultPath: ""
         property string lastBrowsePath: ""
+        property string llmApiKey: ""
+        property string llmProvider: "anthropic"   // "anthropic" | "openai" | "custom"
+        property string llmBaseUrl: ""             // for "custom" (OpenAI-compatible)
+        property string llmModel: "claude-sonnet-4-6"
+        property string theme: "goldenSlate"       // app colour theme
+    }
+
+    // Drive the global theme from settings.
+    Binding { target: Theme; property: "mode"; value: appSettings.theme }
+
+    // Shared LLM client, configured from settings. Children reach it via the
+    // `llmService` property passed into NoteEditor.
+    LlmService {
+        id: llm
+        apiKey: appSettings.llmApiKey
+        provider: appSettings.llmProvider
+        baseUrl: appSettings.llmBaseUrl
+        model: appSettings.llmModel
     }
 
     VaultViewModel {
@@ -209,8 +286,8 @@ ApplicationWindow {
     Rectangle {
         id: bg
         anchors.fill: parent
-        color: "#121212"
-        border.color: "#2c2c2c"
+        color: Theme.bg
+        border.color: Theme.border
         border.width: window.isMaximized ? 0 : 1
 
         TitleBar {
@@ -243,7 +320,7 @@ ApplicationWindow {
             anchors.bottom: parent.bottom
             anchors.rightMargin: 1
             anchors.bottomMargin: 1
-            color: "#121212"
+            color: Theme.bg
 
             // Tab bar — always present (shows just "+" when no tabs are open)
             TabStrip {
@@ -272,6 +349,7 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 anchors.margins: 16
                 visible: window.activeNote !== null && !window.graphViewActive
+                llmService: llm
             }
 
             // Empty-tab placeholder
@@ -301,16 +379,19 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 width: parent.width
                 
-                // State-based slide animation ensures visibility and position are perfectly synced
+                transformOrigin: Item.Center
+
+                // Soft fade + subtle zoom (no horizontal slide) so the graph
+                // materializes in place, matching the app's gentle motion.
                 state: window.graphViewActive ? "visible" : "hidden"
                 states: [
                     State {
                         name: "visible"
-                        PropertyChanges { target: graphView; x: 0; visible: true }
+                        PropertyChanges { target: graphView; opacity: 1; scale: 1; visible: true }
                     },
                     State {
                         name: "hidden"
-                        PropertyChanges { target: graphView; x: graphView.parent.width; visible: false }
+                        PropertyChanges { target: graphView; opacity: 0; scale: 0.97; visible: false }
                     }
                 ]
                 transitions: [
@@ -318,13 +399,19 @@ ApplicationWindow {
                         from: "hidden"; to: "visible"
                         SequentialAnimation {
                             PropertyAction { target: graphView; property: "visible"; value: true }
-                            NumberAnimation { target: graphView; property: "x"; duration: 250; easing.type: Easing.OutCubic }
+                            ParallelAnimation {
+                                NumberAnimation { target: graphView; property: "opacity"; duration: Theme.animMed; easing.type: Easing.OutCubic }
+                                NumberAnimation { target: graphView; property: "scale"; duration: Theme.animMed; easing.type: Easing.OutCubic }
+                            }
                         }
                     },
                     Transition {
                         from: "visible"; to: "hidden"
                         SequentialAnimation {
-                            NumberAnimation { target: graphView; property: "x"; duration: 250; easing.type: Easing.OutCubic }
+                            ParallelAnimation {
+                                NumberAnimation { target: graphView; property: "opacity"; duration: Theme.animFast; easing.type: Easing.InCubic }
+                                NumberAnimation { target: graphView; property: "scale"; duration: Theme.animFast; easing.type: Easing.InCubic }
+                            }
                             PropertyAction { target: graphView; property: "visible"; value: false }
                         }
                     }
@@ -358,11 +445,25 @@ ApplicationWindow {
         onOpenVaultRequested: vaultFolderDialog.open()
     }
 
-    // Recycle bin window (opened from the sidebar Bin tile)
-    BinWindow {
-        id: binWindow
+    // In-app recycle bin (opened from the sidebar Bin tile)
+    BinPanel {
+        id: binPanel
         vaultFs: vaultFs
-        visible: false
+    }
+
+    // In-app settings (opened from the sidebar gear)
+    SettingsPanel {
+        id: settingsPanel
+        apiKey: appSettings.llmApiKey
+        onApiKeyEdited: (key) => appSettings.llmApiKey = key
+        provider: appSettings.llmProvider
+        onProviderEdited: (p) => appSettings.llmProvider = p
+        baseUrl: appSettings.llmBaseUrl
+        onBaseUrlEdited: (u) => appSettings.llmBaseUrl = u
+        model: appSettings.llmModel
+        onModelEdited: (m) => appSettings.llmModel = m
+        theme: appSettings.theme
+        onThemeEdited: (t) => appSettings.theme = t
     }
 
     // Modal background overlay

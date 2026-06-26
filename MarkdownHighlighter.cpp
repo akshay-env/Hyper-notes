@@ -13,13 +13,13 @@ MarkdownHighlighter::MarkdownHighlighter(QObject *parent)
     // Patterns and Formats are initialized once
     m_linkPattern = QRegularExpression("\\[\\[(.*?)\\]\\]");
 
-    m_linkTextFormat.setForeground(QColor("#FFD700")); 
+    m_linkTextFormat.setForeground(QColor("#ffd23f")); // Theme.accent (Golden Slate)
     m_linkTextFormat.setFontWeight(QFont::Bold);
 
     m_hiddenBracketFormat.setForeground(Qt::transparent);
     m_hiddenBracketFormat.setFontPointSize(0.01);
 
-    m_visibleBracketFormat.setForeground(QColor("#888888"));
+    m_visibleBracketFormat.setForeground(QColor("#686e78")); // Theme.textMuted
 }
 
 QQuickTextDocument* MarkdownHighlighter::quickDocument() const
@@ -53,6 +53,20 @@ void MarkdownHighlighter::setCursorPosition(int pos)
         
     m_cursorPosition = pos;
     emit cursorPositionChanged();
+    rehighlight();
+}
+
+QColor MarkdownHighlighter::linkColor() const
+{
+    return m_linkTextFormat.foreground().color();
+}
+
+void MarkdownHighlighter::setLinkColor(const QColor &c)
+{
+    if (m_linkTextFormat.foreground().color() == c)
+        return;
+    m_linkTextFormat.setForeground(c);
+    emit linkColorChanged();
     rehighlight();
 }
 

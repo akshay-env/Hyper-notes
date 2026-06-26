@@ -88,6 +88,50 @@ void ForceSimulation::step(float /*dt*/)
     // No-op: the worker thread drives the simulation now.
 }
 
+void ForceSimulation::clear()
+{
+    m_nodes.clear();
+    m_edges.clear();
+    m_idToIndex.clear();
+    QMetaObject::invokeMethod(m_worker, "clear", Qt::QueuedConnection);
+    m_tickCount++;
+    emit positionsUpdated();
+}
+
+void ForceSimulation::addNodes(const QVariantList& nodes, const QVariantList& edges)
+{
+    // Mirror the additions on the main thread so the edge renderer and the
+    // index-based position reads stay valid. Node maps carry id/x/y.
+    for (const QVariant& nv : nodes) {
+        QVariantMap nm = nv.toMap();
+        Physics::PhysicsNode pn;
+        pn.id = nm.value("id").toString();
+        if (pn.id.isEmpty() || m_idToIndex.contains(pn.id))
+            continue;
+        pn.x = nm.value("x").toFloat();
+        pn.y = nm.value("y").toFloat();
+        m_idToIndex.insert(pn.id, m_nodes.size());
+        m_nodes.push_back(pn);
+    }
+
+    for (const QVariant& ev : edges) {
+        QVariantMap em = ev.toMap();
+        const QString from = em.value("from").toString();
+        const QString to   = em.value("to").toString();
+        if (m_idToIndex.contains(from) && m_idToIndex.contains(to)) {
+            Physics::PhysicsEdge pe;
+            pe.sourceIndex = m_idToIndex.value(from);
+            pe.targetIndex = m_idToIndex.value(to);
+            m_edges.push_back(pe);
+        }
+    }
+
+    QMetaObject::invokeMethod(m_worker, "addNodes", Qt::QueuedConnection,
+                              Q_ARG(QVariantList, nodes), Q_ARG(QVariantList, edges));
+    m_tickCount++;
+    emit positionsUpdated();
+}
+
 void ForceSimulation::onPositionsReady()
 {
     QVector<float> pos;
@@ -118,6 +162,24 @@ float ForceSimulation::getNodeY(const QString& id) const
     auto it = m_idToIndex.constFind(id);
     if (it != m_idToIndex.constEnd()) return m_nodes[it.value()].y;
     return 0.0f;
+}
+
+float ForceSimulation::getNodeXAt(int index) const
+{
+    if (index >= 0 && index < m_nodes.size()) return m_nodes[index].x;
+    return 0.0f;
+}
+
+float ForceSimulation::getNodeYAt(int index) const
+{
+    if (index >= 0 && index < m_nodes.size()) return m_nodes[index].y;
+    return 0.0f;
+}
+
+void ForceSimulation::setTickIntervalMs(int ms)
+{
+    QMetaObject::invokeMethod(m_worker, "setTickInterval", Qt::QueuedConnection,
+                              Q_ARG(int, ms));
 }
 
 void ForceSimulation::setNodePosition(const QString& id, float x, float y)

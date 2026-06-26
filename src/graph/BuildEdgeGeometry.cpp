@@ -6,7 +6,7 @@ void buildEdgeGeometry(QSGGeometry* geometry,
                        const QVector<Physics::PhysicsNode>& nodes,
                        const QVector<Physics::PhysicsEdge>& edges,
                        float panX, float panY, float zoomFactor,
-                       int highlightIndex, bool wantTouching)
+                       const QSet<int>& highlightIndices, bool wantTouching)
 {
     const int nodeCount = nodes.size();
 
@@ -15,8 +15,9 @@ void buildEdgeGeometry(QSGGeometry* geometry,
                e.targetIndex >= 0 && e.targetIndex < nodeCount;
     };
     auto edgeWanted = [&](const Physics::PhysicsEdge& e) {
-        const bool touches = (highlightIndex >= 0 &&
-                              (e.sourceIndex == highlightIndex || e.targetIndex == highlightIndex));
+        const bool touches = (!highlightIndices.isEmpty() &&
+                              (highlightIndices.contains(e.sourceIndex) ||
+                               highlightIndices.contains(e.targetIndex)));
         return wantTouching ? touches : !touches;
     };
 

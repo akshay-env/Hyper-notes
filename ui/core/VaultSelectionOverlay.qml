@@ -1,10 +1,11 @@
 import QtQuick
 import QtQuick.Controls
+import HyperLinkNotes
 
 Rectangle {
     id: root
     anchors.fill: parent
-    color: "#121212"
+    color: Theme.bg
     z: 1000
 
     signal openVaultRequested()
@@ -15,15 +16,15 @@ Rectangle {
 
         Text {
             text: "HyperLink Notes"
-            color: "#ffffff"
+            color: Theme.text
             font.pixelSize: 32
             font.bold: true
             anchors.horizontalCenter: parent.horizontalCenter
         }
-        
+
         Text {
             text: "No vault selected. Create or select a folder to use as your vault."
-            color: "#aaaaaa"
+            color: Theme.textDim
             font.pixelSize: 14
             anchors.horizontalCenter: parent.horizontalCenter
         }
@@ -31,9 +32,11 @@ Rectangle {
         Rectangle {
             width: 150
             height: 40
-            color: openVaultHover.containsMouse ? "#0077ee" : "#0066cc"
-            radius: 4
+            color: openVaultHover.containsMouse ? Theme.accentHover : Theme.accent
+            radius: 6
             anchors.horizontalCenter: parent.horizontalCenter
+
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
             Text {
                 anchors.centerIn: parent

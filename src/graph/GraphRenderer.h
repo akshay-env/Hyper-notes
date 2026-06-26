@@ -2,6 +2,7 @@
 #include <QQuickItem>
 #include <QSGGeometryNode>
 #include <QSGFlatColorMaterial>
+#include <QStringList>
 #include "ForceSimulation.h"
 
 namespace HyperLinkNotes::Core {
@@ -14,7 +15,8 @@ class GraphRenderer : public QQuickItem {
     Q_PROPERTY(float panX READ panX WRITE setPanX NOTIFY panXChanged)
     Q_PROPERTY(float panY READ panY WRITE setPanY NOTIFY panYChanged)
     Q_PROPERTY(float zoomFactor READ zoomFactor WRITE setZoomFactor NOTIFY zoomFactorChanged)
-    Q_PROPERTY(QString highlightNodeId READ highlightNodeId WRITE setHighlightNodeId NOTIFY highlightNodeIdChanged)
+    // Set of node ids whose incident edges light up (open tabs ∪ hovered node).
+    Q_PROPERTY(QStringList highlightNodeIds READ highlightNodeIds WRITE setHighlightNodeIds NOTIFY highlightNodeIdsChanged)
 
 public:
     explicit GraphRenderer(QQuickItem *parent = nullptr);
@@ -31,8 +33,8 @@ public:
     float zoomFactor() const;
     void setZoomFactor(float zoomFactor);
 
-    QString highlightNodeId() const;
-    void setHighlightNodeId(const QString& id);
+    QStringList highlightNodeIds() const;
+    void setHighlightNodeIds(const QStringList& ids);
 
 protected:
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *updatePaintNodeData) override;
@@ -42,14 +44,14 @@ signals:
     void panXChanged();
     void panYChanged();
     void zoomFactorChanged();
-    void highlightNodeIdChanged();
+    void highlightNodeIdsChanged();
 
 private:
     ForceSimulation* m_simulation = nullptr;
     float m_panX = 0.0f;
     float m_panY = 0.0f;
     float m_zoomFactor = 1.0f;
-    QString m_highlightNodeId;
+    QStringList m_highlightNodeIds;
 };
 
 } // namespace HyperLinkNotes::Core

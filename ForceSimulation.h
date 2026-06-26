@@ -26,8 +26,21 @@ public:
     Q_INVOKABLE void init(const QVariantList& nodes, const QVariantList& edges);
     Q_INVOKABLE void step(float dt);   // kept for QML compatibility; now a no-op
 
+    // Incremental build (used by the graph "replay" animation).
+    Q_INVOKABLE void clear();
+    Q_INVOKABLE void addNodes(const QVariantList& nodes, const QVariantList& edges);
+
     Q_INVOKABLE float getNodeX(const QString& id) const;
     Q_INVOKABLE float getNodeY(const QString& id) const;
+
+    // Index-based position reads — skip the per-node QString hash lookup. The
+    // node index matches the order passed to init(), i.e. the QML Repeater index.
+    Q_INVOKABLE float getNodeXAt(int index) const;
+    Q_INVOKABLE float getNodeYAt(int index) const;
+
+    // Sets the worker's physics tick interval (ms); used to match the display
+    // refresh rate.
+    Q_INVOKABLE void setTickIntervalMs(int ms);
 
     Q_INVOKABLE void setNodePosition(const QString& id, float x, float y);
     Q_INVOKABLE void setNodePinned(const QString& id, bool pinned);
