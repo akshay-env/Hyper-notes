@@ -5,7 +5,7 @@ Column {
     spacing: 12
 
     Text {
-        text: "No File Open"
+        text: "No note open"
         color: Theme.textMuted
         font.pixelSize: 20
         font.bold: true

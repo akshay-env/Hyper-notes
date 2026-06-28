@@ -36,7 +36,7 @@ ApplicationWindow {
 
     // Custom properties
     property bool sidebarOpen: true
-    property int sidebarWidth: 180
+    property int sidebarWidth: 240
     property var activeNote: null
     property var historyStack: []
     property int historyIndex: -1
@@ -163,7 +163,7 @@ ApplicationWindow {
             activeNote = null;            // empty tab → new-tab view
             return;
         }
-        var node = Search.search(vaultTree, t.path);
+        var node = Search.search(vaultTreeJS, t.path);   // cached JS tree (no re-wrap)
         activeNote = node ? node : { "path": t.path, "name": t.name };
     }
 
@@ -230,6 +230,10 @@ ApplicationWindow {
         settingsOpen = true;
     }
 
+    function openVaultPicker() {
+        vaultFolderDialog.open();
+    }
+
     // Start with a single empty tab so the new-tab view is the default startup view.
     Component.onCompleted: newTab()
 
@@ -237,24 +241,55 @@ ApplicationWindow {
         id: appSettings
         property string vaultPath: ""
         property string lastBrowsePath: ""
-        property string llmApiKey: ""
-        property string llmProvider: "anthropic"   // "anthropic" | "openai" | "custom"
+        property string llmProvider: "anthropic"   // "anthropic" | "gemini" | "openai" | "custom"
         property string llmBaseUrl: ""             // for "custom" (OpenAI-compatible)
-        property string llmModel: "claude-sonnet-4-6"
-        property string theme: "goldenSlate"       // app colour theme
+        property string theme: "highContrast"      // app colour theme
+        // Each provider keeps its OWN key + model so switching never mixes them.
+        property string llmKeyAnthropic: ""
+        property string llmKeyGemini: ""
+        property string llmKeyOpenai: ""
+        property string llmKeyCustom: ""
+        property string llmModelAnthropic: ""
+        property string llmModelGemini: ""
+        property string llmModelOpenai: ""
+        property string llmModelCustom: ""
+    }
+
+    // The active provider's key/model (read by the client + settings panel).
+    readonly property string activeLlmKey:
+        appSettings.llmProvider === "anthropic" ? appSettings.llmKeyAnthropic
+      : appSettings.llmProvider === "gemini"    ? appSettings.llmKeyGemini
+      : appSettings.llmProvider === "openai"    ? appSettings.llmKeyOpenai
+      : appSettings.llmKeyCustom
+    readonly property string activeLlmModel:
+        appSettings.llmProvider === "anthropic" ? appSettings.llmModelAnthropic
+      : appSettings.llmProvider === "gemini"    ? appSettings.llmModelGemini
+      : appSettings.llmProvider === "openai"    ? appSettings.llmModelOpenai
+      : appSettings.llmModelCustom
+
+    function setLlmKeyFor(p, k) {
+        if (p === "anthropic")   appSettings.llmKeyAnthropic = k;
+        else if (p === "gemini") appSettings.llmKeyGemini = k;
+        else if (p === "openai") appSettings.llmKeyOpenai = k;
+        else                     appSettings.llmKeyCustom = k;
+    }
+    function setLlmModelFor(p, m) {
+        if (p === "anthropic")   appSettings.llmModelAnthropic = m;
+        else if (p === "gemini") appSettings.llmModelGemini = m;
+        else if (p === "openai") appSettings.llmModelOpenai = m;
+        else                     appSettings.llmModelCustom = m;
     }
 
     // Drive the global theme from settings.
     Binding { target: Theme; property: "mode"; value: appSettings.theme }
 
-    // Shared LLM client, configured from settings. Children reach it via the
-    // `llmService` property passed into NoteEditor.
+    // Shared LLM client, configured from settings.
     LlmService {
         id: llm
-        apiKey: appSettings.llmApiKey
+        apiKey: window.activeLlmKey
         provider: appSettings.llmProvider
         baseUrl: appSettings.llmBaseUrl
-        model: appSettings.llmModel
+        model: window.activeLlmModel
     }
 
     VaultViewModel {
@@ -454,14 +489,15 @@ ApplicationWindow {
     // In-app settings (opened from the sidebar gear)
     SettingsPanel {
         id: settingsPanel
-        apiKey: appSettings.llmApiKey
-        onApiKeyEdited: (key) => appSettings.llmApiKey = key
+        llmService: llm
+        apiKey: window.activeLlmKey
+        onApiKeyEdited: (key) => window.setLlmKeyFor(appSettings.llmProvider, key)
         provider: appSettings.llmProvider
         onProviderEdited: (p) => appSettings.llmProvider = p
         baseUrl: appSettings.llmBaseUrl
         onBaseUrlEdited: (u) => appSettings.llmBaseUrl = u
-        model: appSettings.llmModel
-        onModelEdited: (m) => appSettings.llmModel = m
+        model: window.activeLlmModel
+        onModelEdited: (m) => window.setLlmModelFor(appSettings.llmProvider, m)
         theme: appSettings.theme
         onThemeEdited: (t) => appSettings.theme = t
     }

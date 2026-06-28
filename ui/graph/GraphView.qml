@@ -180,12 +180,24 @@ Item {
         anchors.fill: parent
         z: 0
 
+        // MSAA scoped to just the graph. The edge lines are GL_LINES geometry with
+        // no per-vertex AA, so they need multisampling to look smooth on diagonals.
+        // This replaces the old global 4x default surface (which slowed the whole
+        // window's compositing) — a multisampled layer keeps the edges crisp
+        // while only paying the cost while the graph is on screen.
+        layer.enabled: true
+        layer.samples: 4
+        layer.smooth: true
+
         simulation: forceSimulation
         panX: root.panX
         panY: root.panY
         zoomFactor: root.zoomFactor
         // Light up the edges connected to any focused node (open tabs ∪ hovered).
         highlightNodeIds: root.focusSet
+        // Theme-driven edge colours (translucent dim line + accent for lit edges).
+        edgeColor: Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.7)
+        accentColor: Theme.accent
     }
 
     // ── Graph nodes: panned and zoomed via Item transform ────────────────────

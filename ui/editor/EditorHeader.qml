@@ -91,7 +91,8 @@ Rectangle {
                 window.graphViewActive = !window.graphViewActive;
             }
 
-            // Mini knowledge-graph glyph: a hub node linked to three satellites
+            // Graph glyph: three interconnected nodes, drawn as OUTLINED circles +
+            // connecting edges to match the app's other line icons (trash/folder/gear).
             Canvas {
                 anchors.centerIn: parent
                 width: 22
@@ -101,24 +102,32 @@ Rectangle {
                 onPaint: {
                     var ctx = getContext("2d");
                     ctx.reset();
+                    ctx.lineCap = "round";
+                    ctx.lineJoin = "round";
                     ctx.strokeStyle = tint;
-                    ctx.fillStyle = tint;
-                    ctx.lineWidth = 1.4;
+                    ctx.lineWidth = 1.3;
 
-                    var nodes = [[11, 12], [11, 3], [4, 18], [18, 18]];
-                    var radii = [3.2, 2.4, 2.4, 2.4];
+                    var n = [[11, 4.6], [5.2, 16.4], [16.8, 16.4]];
+                    var r = 2.7;
+                    var edges = [[0, 1], [1, 2], [2, 0]];
 
-                    ctx.beginPath();
-                    for (var i = 1; i < nodes.length; i++) {
-                        ctx.moveTo(nodes[0][0], nodes[0][1]);
-                        ctx.lineTo(nodes[i][0], nodes[i][1]);
-                    }
-                    ctx.stroke();
-
-                    for (var j = 0; j < nodes.length; j++) {
+                    // Edges connect the circle perimeters (not centres) for a clean look.
+                    for (var e = 0; e < edges.length; e++) {
+                        var a = n[edges[e][0]], b = n[edges[e][1]];
+                        var dx = b[0] - a[0], dy = b[1] - a[1];
+                        var d = Math.sqrt(dx * dx + dy * dy);
+                        var ux = dx / d, uy = dy / d;
                         ctx.beginPath();
-                        ctx.arc(nodes[j][0], nodes[j][1], radii[j], 0, Math.PI * 2);
-                        ctx.fill();
+                        ctx.moveTo(a[0] + ux * r, a[1] + uy * r);
+                        ctx.lineTo(b[0] - ux * r, b[1] - uy * r);
+                        ctx.stroke();
+                    }
+
+                    // Hollow nodes on top.
+                    for (var i = 0; i < n.length; i++) {
+                        ctx.beginPath();
+                        ctx.arc(n[i][0], n[i][1], r, 0, Math.PI * 2);
+                        ctx.stroke();
                     }
                 }
             }

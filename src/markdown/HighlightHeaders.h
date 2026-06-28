@@ -4,7 +4,7 @@
 #include "HighlightLinks.h" // For FormatInstruction struct
 
 namespace HyperLinkNotes::Core::Markdown {
-    QList<FormatInstruction> calculateHeaderHighlights(const QString &text, int currentBlockPosition);
+    QList<FormatInstruction> calculateHeaderHighlights(const QString &text, int currentBlockPosition, int cursorPosition);
 }
 
 #endif // HIGHLIGHTHEADERS_H

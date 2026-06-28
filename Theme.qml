@@ -7,20 +7,10 @@ import QtQuick
 QtObject {
     id: theme
 
-    // "goldenSlate" | "light" | "highContrast" | "midnightIndigo" | "emeraldNoir"
-    property string mode: "goldenSlate"
+    // light | highContrast | midnightIndigo | emeraldNoir | crimsonEmber | cyberTeal | mist
+    property string mode: "highContrast"
 
     readonly property var _all: ({
-        "goldenSlate": {
-            bg: "#0a0b0d", surface: "#101216", surface2: "#16191f", elevated: "#20242b",
-            overlayHover: Qt.rgba(1, 1, 1, 0.05), border: "#282d35", divider: "#1c2027",
-            text: "#eef0f2", textDim: "#9da3ac", textMuted: "#686e78", textFaint: "#444a54",
-            accent: "#ffd23f", accentHover: "#ffe066", accentText: "#ffe98c", onAccent: "#0a0b0d",
-            accentSoft: Qt.rgba(1.0, 0.824, 0.247, 0.18), accentSoftHi: Qt.rgba(1.0, 0.824, 0.247, 0.30),
-            danger: "#ef5f6b", dangerHover: "#ff7280", dangerSoft: Qt.rgba(0.94, 0.37, 0.42, 0.13),
-            highlight: "#ffd479", graphBg: "#0c0d10",
-            node: "#9da3ac", nodeNeighbor: "#d6dae0", nodeActive: "#ffd23f", nodeHi: "#ffffff"
-        },
         "light": {
             bg: "#f7f6f2", surface: "#ffffff", surface2: "#efece4", elevated: "#e6e2d8",
             overlayHover: Qt.rgba(0, 0, 0, 0.05), border: "#e3dfd5", divider: "#ece8de",
@@ -60,10 +50,50 @@ QtObject {
             danger: "#ef5f6b", dangerHover: "#ff7280", dangerSoft: Qt.rgba(0.94, 0.37, 0.42, 0.13),
             highlight: "#34d399", graphBg: "#07120e",
             node: "#93b3a4", nodeNeighbor: "#cfe6da", nodeActive: "#34d399", nodeHi: "#ffffff"
+        },
+        "crimsonEmber": {
+            bg: "#12100f", surface: "#1b1715", surface2: "#221d1a", elevated: "#2e2722",
+            overlayHover: Qt.rgba(1, 1, 1, 0.05), border: "#352c27", divider: "#241e1b",
+            text: "#f2ebe7", textDim: "#b3a59d", textMuted: "#7d6f67", textFaint: "#524841",
+            accent: "#f0584b", accentHover: "#ff6e62", accentText: "#ffb3aa", onAccent: "#1b0c0a",
+            accentSoft: Qt.rgba(0.941, 0.345, 0.294, 0.16), accentSoftHi: Qt.rgba(0.941, 0.345, 0.294, 0.28),
+            danger: "#d83a4a", dangerHover: "#ec4d5d", dangerSoft: Qt.rgba(0.847, 0.227, 0.29, 0.13),
+            highlight: "#f0584b", graphBg: "#12100f",
+            node: "#b3a59d", nodeNeighbor: "#e6dcd5", nodeActive: "#f0584b", nodeHi: "#ffffff"
+        },
+        "cyberTeal": {
+            bg: "#06121a", surface: "#0a1b26", surface2: "#0f2430", elevated: "#163443",
+            overlayHover: Qt.rgba(1, 1, 1, 0.05), border: "#1c3d4d", divider: "#102733",
+            text: "#e2f1f5", textDim: "#8fb3bf", textMuted: "#5d7e8a", textFaint: "#3a525c",
+            accent: "#22d3ee", accentHover: "#4fdef5", accentText: "#a5edf7", onAccent: "#04161c",
+            accentSoft: Qt.rgba(0.133, 0.827, 0.933, 0.16), accentSoftHi: Qt.rgba(0.133, 0.827, 0.933, 0.28),
+            danger: "#ef5f6b", dangerHover: "#ff7280", dangerSoft: Qt.rgba(0.94, 0.37, 0.42, 0.13),
+            highlight: "#22d3ee", graphBg: "#06121a",
+            node: "#8fb3bf", nodeNeighbor: "#cbe8ef", nodeActive: "#22d3ee", nodeHi: "#ffffff"
+        },
+        "mist": {
+            bg: "#f4f6f9", surface: "#ffffff", surface2: "#eaeef3", elevated: "#dfe5ed",
+            overlayHover: Qt.rgba(0, 0, 0, 0.05), border: "#dde3eb", divider: "#e8ecf2",
+            text: "#1c2430", textDim: "#586272", textMuted: "#8b94a3", textFaint: "#b6bdc8",
+            accent: "#4f6ef0", accentHover: "#3d5ce0", accentText: "#2a3f9e", onAccent: "#ffffff",
+            accentSoft: Qt.rgba(0.31, 0.431, 0.941, 0.14), accentSoftHi: Qt.rgba(0.31, 0.431, 0.941, 0.24),
+            danger: "#e0384a", dangerHover: "#c52a3b", dangerSoft: Qt.rgba(0.878, 0.22, 0.29, 0.10),
+            highlight: "#4f6ef0", graphBg: "#eef1f6",
+            node: "#9aa3b2", nodeNeighbor: "#586272", nodeActive: "#4f6ef0", nodeHi: "#1c2430"
+        },
+        "sapphire": {
+            bg: "#0e1014", surface: "#161922", surface2: "#1c2029", elevated: "#262b36",
+            overlayHover: Qt.rgba(1, 1, 1, 0.05), border: "#2b313d", divider: "#1b1f28",
+            text: "#e8ebf0", textDim: "#98a1b3", textMuted: "#646d80", textFaint: "#424a59",
+            accent: "#3b82f6", accentHover: "#5b97f8", accentText: "#a9c8fc", onAccent: "#061021",
+            accentSoft: Qt.rgba(0.231, 0.51, 0.965, 0.16), accentSoftHi: Qt.rgba(0.231, 0.51, 0.965, 0.28),
+            danger: "#ef5f6b", dangerHover: "#ff7280", dangerSoft: Qt.rgba(0.94, 0.37, 0.42, 0.13),
+            highlight: "#3b82f6", graphBg: "#0e1014",
+            node: "#98a1b3", nodeNeighbor: "#d3d9e3", nodeActive: "#3b82f6", nodeHi: "#ffffff"
         }
     })
 
-    readonly property var _p: _all[mode] !== undefined ? _all[mode] : _all["goldenSlate"]
+    readonly property var _p: _all[mode] !== undefined ? _all[mode] : _all["highContrast"]
 
     // ── Surfaces ─────────────────────────────────────────────────────────────
     readonly property color bg:           _p.bg

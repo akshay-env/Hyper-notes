@@ -26,6 +26,44 @@ Item {
 
     property bool showKey: false
 
+    // Model dropdown — fetched from the provider with the entered key.
+    property var llmService: null
+    property var _models: []
+    property string _modelsStatus: ""
+
+    function _loadModels() {
+        if (!visible || !llmService) return;
+        if (apiKey.trim() === "") { _models = []; _modelsStatus = ""; return; }
+        _modelsStatus = "Loading models…";
+        llmService.fetchModels();
+    }
+
+    onApiKeyChanged: modelsDebounce.restart()
+    onBaseUrlChanged: modelsDebounce.restart()
+    // Switching provider shows that provider's own stored key/model.
+    onProviderChanged: {
+        keyField.text = apiKey;
+        modelField.text = model;
+        baseUrlField.text = baseUrl;
+        _models = [];
+        _modelsStatus = "";
+        modelsDebounce.restart();
+    }
+
+    Timer { id: modelsDebounce; interval: 700; onTriggered: settingsPanel._loadModels() }
+
+    Connections {
+        target: settingsPanel.llmService
+        function onModelsReady(list) {
+            settingsPanel._models = list;
+            settingsPanel._modelsStatus = list.length + " models available";
+        }
+        function onModelsFailed(err) {
+            settingsPanel._models = [];
+            settingsPanel._modelsStatus = "Couldn't load models — check the key";
+        }
+    }
+
     function close() { window.settingsOpen = false; }
 
     onVisibleChanged: {
@@ -34,6 +72,9 @@ Item {
             modelField.text = model;
             baseUrlField.text = baseUrl;
             showKey = false;
+            _models = [];
+            _modelsStatus = "";
+            _loadModels();
         }
     }
 
@@ -146,11 +187,13 @@ Item {
                     font.family: "Segoe UI"
                 }
 
-                Row {
+                Flow {
+                    Layout.fillWidth: true
                     spacing: 8
                     Repeater {
                         model: [
                             { key: "anthropic", label: "Anthropic" },
+                            { key: "gemini", label: "Gemini" },
                             { key: "openai", label: "OpenAI" },
                             { key: "custom", label: "Custom" }
                         ]
@@ -296,11 +339,11 @@ Item {
                     font.pixelSize: 11
                     font.family: "Segoe UI"
                     Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
+                    wrapMode: Text.Wrap
                 }
             }
 
-            // Model
+            // Model (with a dropdown of models fetched from the provider)
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 6
@@ -313,6 +356,7 @@ Item {
                 }
 
                 Rectangle {
+                    id: modelBox
                     Layout.fillWidth: true
                     height: 38
                     radius: 6
@@ -321,23 +365,147 @@ Item {
                     border.width: 1
                     Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
 
-                    TextField {
-                        id: modelField
+                    RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        verticalAlignment: TextInput.AlignVCenter
-                        placeholderText: settingsPanel.provider === "anthropic" ? "e.g. claude-sonnet-4-6" : "e.g. gpt-4o"
-                        placeholderTextColor: Theme.textFaint
-                        color: Theme.text
-                        font.pixelSize: 13
-                        font.family: "Consolas, Segoe UI"
-                        selectionColor: Theme.accent
-                        selectedTextColor: Theme.onAccent
-                        background: null
-                        leftPadding: 0
-                        onTextEdited: settingsPanel.modelEdited(text)
+                        anchors.rightMargin: 4
+                        spacing: 4
+
+                        TextField {
+                            id: modelField
+                            Layout.fillWidth: true
+                            verticalAlignment: TextInput.AlignVCenter
+                            placeholderText: settingsPanel.provider === "anthropic" ? "e.g. claude-sonnet-4-6"
+                                           : settingsPanel.provider === "gemini" ? "e.g. gemini-2.0-flash"
+                                           : "e.g. gpt-4o"
+                            placeholderTextColor: Theme.textFaint
+                            color: Theme.text
+                            font.pixelSize: 13
+                            font.family: "Consolas, Segoe UI"
+                            selectionColor: Theme.accent
+                            selectedTextColor: Theme.onAccent
+                            background: null
+                            leftPadding: 0
+                            onTextEdited: settingsPanel.modelEdited(text)
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 30
+                            Layout.preferredHeight: 30
+                            radius: 5
+                            color: chevHover.containsMouse ? Theme.elevated : "transparent"
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                            Text {
+                                anchors.centerIn: parent
+                                text: "▾"
+                                color: Theme.textDim
+                                font.pixelSize: 13
+                            }
+                            MouseArea {
+                                id: chevHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (modelMenu.visible) {
+                                        modelMenu.close();
+                                    } else {
+                                        if (settingsPanel._models.length === 0) settingsPanel._loadModels();
+                                        modelMenu.open();
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    Popup {
+                        id: modelMenu
+                        parent: modelBox
+                        y: modelBox.height + 4
+                        x: 0
+                        width: modelBox.width
+                        padding: 4
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                        background: Rectangle {
+                            color: Theme.surface2
+                            border.color: Theme.border
+                            border.width: 1
+                            radius: 8
+                        }
+
+                        contentItem: ColumnLayout {
+                            spacing: 0
+
+                            Text {
+                                Layout.fillWidth: true
+                                Layout.margins: 8
+                                visible: settingsPanel._models.length === 0
+                                text: settingsPanel._modelsStatus !== "" ? settingsPanel._modelsStatus : "No models loaded"
+                                color: Theme.textMuted
+                                font.pixelSize: 12
+                                font.family: "Segoe UI"
+                                wrapMode: Text.Wrap
+                            }
+
+                            ScrollView {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.min(240, settingsPanel._models.length * 31)
+                                visible: settingsPanel._models.length > 0
+                                clip: true
+                                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                                ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+
+                                ListView {
+                                    id: modelList
+                                    model: settingsPanel._models
+                                    spacing: 1
+                                    delegate: Rectangle {
+                                        width: modelList.width
+                                        height: 30
+                                        radius: 5
+                                        property bool isCurrent: modelField.text === modelData
+                                        color: mdHover.containsMouse ? Theme.elevated : "transparent"
+
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 8
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData
+                                            color: parent.isCurrent ? Theme.accent : Theme.text
+                                            font.pixelSize: 12
+                                            font.family: "Consolas, Segoe UI"
+                                            elide: Text.ElideRight
+                                        }
+                                        MouseArea {
+                                            id: mdHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            onClicked: {
+                                                modelField.text = modelData;
+                                                settingsPanel.modelEdited(modelData);
+                                                modelMenu.close();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: settingsPanel._modelsStatus !== ""
+                    text: settingsPanel._modelsStatus
+                    color: settingsPanel._modelsStatus.indexOf("Couldn't") === 0 ? Theme.danger : Theme.textMuted
+                    font.pixelSize: 11
+                    font.family: "Segoe UI"
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                 }
             }
 
@@ -370,11 +538,14 @@ Item {
 
                     Repeater {
                         model: [
-                            { key: "goldenSlate",    label: "Golden Slate",   bg: "#0a0b0d", ac: "#ffd23f" },
-                            { key: "light",          label: "Light",          bg: "#f7f6f2", ac: "#d99a16" },
                             { key: "highContrast",   label: "High Contrast",  bg: "#000000", ac: "#ffe000" },
+                            { key: "light",          label: "Light",          bg: "#f7f6f2", ac: "#d99a16" },
+                            { key: "mist",           label: "Mist",           bg: "#f4f6f9", ac: "#4f6ef0" },
                             { key: "midnightIndigo", label: "Midnight Indigo",bg: "#0a0c18", ac: "#8b7df6" },
-                            { key: "emeraldNoir",    label: "Emerald Noir",   bg: "#07120e", ac: "#34d399" }
+                            { key: "emeraldNoir",    label: "Emerald Noir",   bg: "#07120e", ac: "#34d399" },
+                            { key: "crimsonEmber",   label: "Crimson Ember",  bg: "#12100f", ac: "#f0584b" },
+                            { key: "cyberTeal",      label: "Cyber Teal",     bg: "#06121a", ac: "#22d3ee" },
+                            { key: "sapphire",       label: "Sapphire",       bg: "#0e1014", ac: "#3b82f6" }
                         ]
                         delegate: Rectangle {
                             id: themeSwatch
@@ -398,7 +569,7 @@ Item {
                                 anchors.bottomMargin: 7
                                 width: parent.width - 16
                                 text: modelData.label
-                                color: modelData.key === "light" ? "#20242e" : "#ffffff"
+                                color: (modelData.key === "light" || modelData.key === "mist") ? "#20242e" : "#ffffff"
                                 font.pixelSize: 9
                                 font.family: "Segoe UI"
                                 elide: Text.ElideRight

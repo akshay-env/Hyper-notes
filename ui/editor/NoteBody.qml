@@ -10,7 +10,9 @@ import "../../scripts/editor/branchNote.js" as BranchNote
 ScrollView {
     id: scrollView
     clip: true
+    // Hide both scrollbars; wheel/touch scrolling still works via the flickable.
     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+    ScrollBar.vertical.policy: ScrollBar.AlwaysOff
     
     property alias text: noteBody.text
     property var vaultFs: null

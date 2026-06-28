@@ -6,6 +6,7 @@ import "../dialogs"
 import "../../scripts/tree/refreshTree.js" as RefreshTree
 import "../../scripts/editor/frontmatter.js" as FM
 import "../../scripts/editor/buildContext.js" as BuildContext
+import "../../scripts/editor/openLink.js" as OpenLink
 
 ColumnLayout {
     id: root
@@ -19,7 +20,8 @@ ColumnLayout {
     property var llmService: null
     property string askError: ""
     property bool askExpanded: false   // collapsed → only the Ask button shows
-    property int _streamPos: 0         // where the streamed answer is being written
+    property string _typeQueue: ""     // buffered streamed text not yet "typed" in
+    property bool _streamDone: false   // network stream ended; drain the queue then finish
 
     function submitAsk() {
         if (!llmService || llmService.busy) return;
@@ -29,20 +31,18 @@ ColumnLayout {
 
         // Context = this note's ancestor chain (read from files, capped) + its
         // own live body. The parent is read from this note's frontmatter.
-        var parsed = FM.parse(noteBody.text);
+        var parsed = FM.parse(cmEditor.text);
         var currentTitle = (window.activeNote && window.activeNote.name)
                            ? window.activeNote.name.replace(/\.md$/i, "") : "Current note";
         var ctx = BuildContext.buildFromTitle(window, window.vaultFsRef, parsed.parent, 12000);
         if (parsed.body.trim().length > 0)
             ctx += (ctx ? "\n\n" : "") + "## " + currentTitle + "\n" + parsed.body.trim();
 
-        // Drop the question into the note; the answer streams in right after it.
-        var ta = noteBody.textArea;
-        var p0 = ta.cursorPosition;
-        var qBlock = "\n> " + q + "\n\n";
-        ta.insert(p0, qBlock);
-        root._streamPos = p0 + qBlock.length;
-        ta.cursorPosition = root._streamPos;
+        // Append the question at the end; the answer streams in right after it.
+        // (We append at the document end rather than at the cursor position.)
+        cmEditor.appendText("\n> " + q + "\n\n");
+        root._typeQueue = "";
+        root._streamDone = false;
 
         llmService.ask(q, ctx.trim());
         askField.text = "";
@@ -51,41 +51,54 @@ ColumnLayout {
     Connections {
         target: root.llmService
 
+        // Buffer streamed text; the typewriter timer reveals it at a steady pace.
         function onStreamChunk(delta) {
-            var ta = noteBody.textArea;
-            var pos = Math.min(root._streamPos, ta.length);
-            ta.insert(pos, delta);
-            root._streamPos = pos + delta.length;
-            ta.cursorPosition = root._streamPos;   // keep the caret riding the text
+            root._typeQueue += delta;
+            if (!typeTimer.running) typeTimer.start();
         }
 
         function onStreamFinished() {
-            var ta = noteBody.textArea;
-            ta.insert(Math.min(root._streamPos, ta.length), "\n");
-            if (window.activeNote && window.activeNote.path)
-                window.vaultFsRef.saveFile(window.activeNote.path, noteBody.text);
+            root._streamDone = true;
+            if (!typeTimer.running) root._finishStream();
         }
 
         function onFailed(err) {
+            typeTimer.stop();
+            root._typeQueue = "";
+            root._streamDone = false;
             root.askError = err;
             askErrorTimer.restart();
             root.askExpanded = true;   // open the bar so the error is visible
         }
     }
 
-    Timer { id: askErrorTimer; interval: 6000; onTriggered: root.askError = "" }
-    Timer { id: askFocusTimer; interval: 230; onTriggered: askField.forceActiveFocus() }
-
-    // Collapse the (empty) Ask bar when the editing cursor returns to the note.
-    Connections {
-        target: noteBody.textArea
-        function onActiveFocusChanged() {
-            if (noteBody.textArea.activeFocus && root.askExpanded
-                    && askField.text.trim() === ""
-                    && !(root.llmService && root.llmService.busy))
-                root.askExpanded = false;
+    // Typewriter — reveals the buffered answer at a brisk, readable pace (not an
+    // instant paste). Speeds up when a backlog builds so long answers don't lag.
+    Timer {
+        id: typeTimer
+        interval: 14
+        repeat: true
+        onTriggered: {
+            if (root._typeQueue.length === 0) {
+                typeTimer.stop();
+                if (root._streamDone) root._finishStream();
+                return;
+            }
+            var n = Math.max(1, Math.ceil(root._typeQueue.length / 55));
+            var piece = root._typeQueue.substring(0, n);
+            root._typeQueue = root._typeQueue.substring(n);
+            cmEditor.appendText(piece);
         }
     }
+
+    function _finishStream() {
+        cmEditor.appendText("\n");
+        root._streamDone = false;
+        // The debounced saveTimer (on cmEditor.edited) persists the final text.
+    }
+
+    Timer { id: askErrorTimer; interval: 6000; onTriggered: root.askError = "" }
+    Timer { id: askFocusTimer; interval: 230; onTriggered: askField.forceActiveFocus() }
 
     // Sync editor text fields when activeNote changes
     Connections {
@@ -94,14 +107,14 @@ ColumnLayout {
             if (window.activeNote) {
                 if (window.activeNote.path !== currentLoadedPath) {
                     noteTitle.text = window.activeNote.name.replace(/\.md$/i, "");
-                    noteBody.text = window.activeNote.path ? vaultFs.readFile(window.activeNote.path) : (window.activeNote.content || "");
+                    cmEditor.text = window.activeNote.path ? vaultFs.readFile(window.activeNote.path) : (window.activeNote.content || "");
                     currentLoadedPath = window.activeNote.path;
                     noteTitle.editingPath = window.activeNote.path;
                     noteTitle.editingOriginalName = window.activeNote.name.replace(/\.md$/i, "");
                 }
             } else {
                 noteTitle.text = "";
-                noteBody.text = "";
+                cmEditor.text = "";
                 currentLoadedPath = "";
                 noteTitle.editingPath = "";
                 noteTitle.editingOriginalName = "";
@@ -133,20 +146,29 @@ ColumnLayout {
         }
 
         onTitleAccepted: {
-            noteBody.textArea.forceActiveFocus();
+            cmEditor.focusEditor();
         }
     }
 
-    NoteBody {
-        id: noteBody
+    // Native live-preview editor. Exposes text / edited / linkClicked /
+    // appendText / focusEditor.
+    LivePreviewEditor {
+        id: cmEditor
         Layout.fillWidth: true
         Layout.fillHeight: true
-        vaultFs: window.vaultFsRef
 
-        onBodyTextChanged: (text) => {
-            if (window.activeNote && window.activeNote.path) {
-                vaultFs.saveFile(window.activeNote.path, text);
-            }
+        // Debounced save: edits (typed or AI-streamed) restart the timer; it
+        // persists the live text once things go quiet.
+        onEdited: (text) => saveTimer.restart()
+        onLinkClicked: (target) => OpenLink.openLink(window, window.vaultFsRef, target)
+    }
+
+    Timer {
+        id: saveTimer
+        interval: 400
+        onTriggered: {
+            if (window.activeNote && window.activeNote.path)
+                window.vaultFsRef.saveFile(window.activeNote.path, cmEditor.text);
         }
     }
 

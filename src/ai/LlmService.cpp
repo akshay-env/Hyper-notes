@@ -25,6 +25,81 @@ void LlmService::cancel()
     if (m_reply) m_reply->abort();   // triggers finished() with an OperationCanceledError
 }
 
+void LlmService::fetchModels()
+{
+    if (m_apiKey.trimmed().isEmpty()) {
+        emit modelsFailed(QStringLiteral("Enter an API key first."));
+        return;
+    }
+    if (m_modelsReply) { m_modelsReply->abort(); m_modelsReply = nullptr; }
+
+    const QString provider = m_provider.toLower();
+    QNetworkRequest req;
+
+    if (provider == QStringLiteral("anthropic")) {
+        req.setUrl(QUrl(QStringLiteral("https://api.anthropic.com/v1/models")));
+        req.setRawHeader("x-api-key", m_apiKey.toUtf8());
+        req.setRawHeader("anthropic-version", "2023-06-01");
+    } else {
+        QString base;
+        if (provider == QStringLiteral("gemini")) {
+            base = QStringLiteral("https://generativelanguage.googleapis.com/v1beta/openai");
+        } else {
+            base = m_baseUrl.trimmed();
+            if (base.isEmpty()) base = QStringLiteral("https://api.openai.com/v1");
+        }
+        while (base.endsWith('/')) base.chop(1);
+        req.setUrl(QUrl(base + QStringLiteral("/models")));
+        req.setRawHeader("Authorization", (QStringLiteral("Bearer ") + m_apiKey).toUtf8());
+    }
+
+    m_modelsReply = m_net.get(req);
+    connect(m_modelsReply, &QNetworkReply::finished, this, &LlmService::onModelsFinished);
+}
+
+void LlmService::onModelsFinished()
+{
+    QNetworkReply *reply = m_modelsReply;
+    m_modelsReply = nullptr;
+    if (!reply) return;
+    reply->deleteLater();
+
+    const QByteArray data = reply->readAll();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        QString msg = reply->errorString();
+        QJsonParseError pe;
+        const QJsonDocument doc = QJsonDocument::fromJson(data, &pe);
+        if (pe.error == QJsonParseError::NoError && doc.isObject()) {
+            const QString apiMsg = doc.object().value("error").toObject().value("message").toString();
+            if (!apiMsg.isEmpty()) msg = apiMsg;
+        }
+        emit modelsFailed(msg);
+        return;
+    }
+
+    QJsonParseError pe;
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &pe);
+    if (pe.error != QJsonParseError::NoError || !doc.isObject()) {
+        emit modelsFailed(QStringLiteral("Could not parse the model list."));
+        return;
+    }
+
+    // Both Anthropic and OpenAI-compatible endpoints return { "data": [ { "id" } ] }.
+    QStringList models;
+    const QJsonArray arr = doc.object().value("data").toArray();
+    for (int i = 0; i < arr.size(); ++i) {
+        QString id = arr.at(i).toObject().value("id").toString();
+        if (id.startsWith(QStringLiteral("models/"))) id = id.mid(7);   // strip Gemini prefix
+        if (!id.isEmpty()) models.append(id);
+    }
+    models.removeDuplicates();
+    models.sort(Qt::CaseInsensitive);
+
+    if (models.isEmpty()) { emit modelsFailed(QStringLiteral("No models returned.")); return; }
+    emit modelsReady(models);
+}
+
 void LlmService::ask(const QString &prompt, const QString &context)
 {
     if (m_busy) return;
@@ -56,10 +131,15 @@ void LlmService::ask(const QString &prompt, const QString &context)
         body.insert("messages", messages);
         body.insert("max_tokens", m_maxTokens);
     } else {
-        // OpenAI-compatible (OpenAI, OpenRouter, Groq, Together, Ollama, …). The
-        // base URL is configurable; empty defaults to OpenAI.
-        QString base = m_baseUrl.trimmed();
-        if (base.isEmpty()) base = QStringLiteral("https://api.openai.com/v1");
+        // OpenAI-compatible (OpenAI, Google Gemini, OpenRouter, Groq, Ollama, …).
+        // Gemini exposes an OpenAI-compatible endpoint, so it reuses this path.
+        QString base;
+        if (provider == QStringLiteral("gemini")) {
+            base = QStringLiteral("https://generativelanguage.googleapis.com/v1beta/openai");
+        } else {
+            base = m_baseUrl.trimmed();
+            if (base.isEmpty()) base = QStringLiteral("https://api.openai.com/v1");
+        }
         while (base.endsWith('/')) base.chop(1);
 
         req.setUrl(QUrl(base + QStringLiteral("/chat/completions")));

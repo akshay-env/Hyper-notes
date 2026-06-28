@@ -64,6 +64,20 @@ void GraphRenderer::setHighlightNodeIds(const QStringList& ids) {
     update();
 }
 
+void GraphRenderer::setEdgeColor(const QColor& c) {
+    if (m_edgeColor == c) return;
+    m_edgeColor = c;
+    emit edgeColorChanged();
+    update();
+}
+
+void GraphRenderer::setAccentColor(const QColor& c) {
+    if (m_accentColor == c) return;
+    m_accentColor = c;
+    emit accentColorChanged();
+    update();
+}
+
 QSGNode *GraphRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
     QSGNode *root = oldNode;
@@ -102,6 +116,12 @@ QSGNode *GraphRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
         dimNode = static_cast<QSGGeometryNode *>(root->childAtIndex(0));
         hiNode  = static_cast<QSGGeometryNode *>(root->childAtIndex(1));
     }
+
+    // Apply the current (theme-driven) edge colours.
+    static_cast<QSGFlatColorMaterial *>(dimNode->material())->setColor(m_edgeColor);
+    static_cast<QSGFlatColorMaterial *>(hiNode->material())->setColor(m_accentColor);
+    dimNode->markDirty(QSGNode::DirtyMaterial);
+    hiNode->markDirty(QSGNode::DirtyMaterial);
 
     if (m_simulation) {
         // Resolve the highlight set (open tabs ∪ hovered) to node indices. Empty

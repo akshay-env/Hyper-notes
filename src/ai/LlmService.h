@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QNetworkAccessManager>
 #include <QtQml/qqmlregistration.h>
 
@@ -56,6 +57,9 @@ public:
     Q_INVOKABLE void ask(const QString &prompt, const QString &context = QString());
     Q_INVOKABLE void cancel();
 
+    // Fetches the list of available models for the current provider/key.
+    Q_INVOKABLE void fetchModels();
+
 signals:
     void apiKeyChanged();
     void providerChanged();
@@ -68,15 +72,19 @@ signals:
     void streamChunk(const QString &delta);     // incremental text as it arrives
     void streamFinished();
     void failed(const QString &error);
+    void modelsReady(const QStringList &models);
+    void modelsFailed(const QString &error);
 
 private:
     void setBusy(bool b);
     void onReadyRead();
     void drainBuffer();       // parse complete SSE lines out of m_sseBuffer
     void onReplyFinished();
+    void onModelsFinished();
 
     QNetworkAccessManager m_net;
     QNetworkReply *m_reply = nullptr;
+    QNetworkReply *m_modelsReply = nullptr;
     bool m_busy = false;
 
     // Streaming (SSE) accumulation.

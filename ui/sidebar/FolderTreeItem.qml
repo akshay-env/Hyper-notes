@@ -300,6 +300,9 @@ Item {
                 delegate: Loader {
                     width: childrenColumn.width
                     sourceComponent: root.delegateComponent
+                    // Load children off the critical path so expanding a huge folder
+                    // (e.g. 1000 notes) streams in instead of freezing the UI.
+                    asynchronous: true
 
                     onLoaded: {
                         if (item) {

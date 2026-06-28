@@ -1,14 +1,12 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QSurfaceFormat>
 
 int main(int argc, char *argv[])
 {
-    // 4x MSAA so the graph's edge lines (GL_LINES scene-graph geometry) render
-    // cleanly anti-aliased instead of jagged/stair-stepped on diagonals.
-    QSurfaceFormat fmt = QSurfaceFormat::defaultFormat();
-    fmt.setSamples(4);
-    QSurfaceFormat::setDefaultFormat(fmt);
+    // NOTE: the graph's edge lines (GL_LINES geometry) get their anti-aliasing
+    // from a multisampled layer scoped to the graph item (see GraphView.qml), not
+    // a global 4x MSAA default surface — a global multisampled surface taxed the
+    // whole window's compositing every frame.
 
     QGuiApplication app(argc, argv);
     app.setOrganizationName("HyperLinkNotes");
@@ -21,6 +19,7 @@ int main(int argc, char *argv[])
         &app,
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
+
     engine.loadFromModule("HyperLinkNotes", "Main");
 
     return app.exec();

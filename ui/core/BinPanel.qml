@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import HyperLinkNotes
 import "../../scripts/bin/refreshBinList.js" as RefreshBinList
+import "../../scripts/tree/refreshTree.js" as RefreshTree
 
 // In-app recycle bin. A centered modal card over a dimmed backdrop — lives
 // inside the main window (no separate OS window). Driven by window.binOpen.
@@ -162,6 +163,7 @@ Item {
                 Layout.fillHeight: true
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
                 ListView {
                     id: binListView
@@ -233,8 +235,10 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     onClicked: {
-                                        if (vaultFs && vaultFs.restoreFromBin(model.path))
-                                            binPanel.refresh();
+                                        if (vaultFs && vaultFs.restoreFromBin(model.path)) {
+                                            binPanel.refresh();                       // update the bin list
+                                            RefreshTree.refreshTree(window, vaultFs); // AND rebuild the file tree so the restored item shows immediately
+                                        }
                                     }
                                 }
                             }

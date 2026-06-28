@@ -40,6 +40,8 @@ qt_add_executable(appHyperLinkNotes
     src/markdown/HighlightLinks.cpp
     src/markdown/HighlightHeaders.cpp
     src/markdown/HighlightCodeBlocks.cpp
+    src/markdown/HighlightEmphasis.cpp
+    src/markdown/HighlightLists.cpp
     ForceSimulation.cpp
     ForceSimulation.h
     src/physics/CalculateRepulsion.cpp
@@ -63,6 +65,7 @@ qt_add_qml_module(appHyperLinkNotes
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES
         Main.qml
+        ui/editor/LivePreviewEditor.qml
         Theme.qml
         ui/core/TitleBar.qml
         ui/core/TabStrip.qml

@@ -13,8 +13,11 @@ Rectangle {
     color: Theme.surface
     clip: true
 
-    // Smooth sliding transition
+    // Smooth sliding transition for the OPEN/CLOSE toggle only. While the user is
+    // dragging the resize handle, disable it so the panel edge (and the editor
+    // border) track the mouse exactly instead of lagging behind by the animation.
     Behavior on width {
+        enabled: !resizer.pressed
         NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
     }
 
@@ -29,6 +32,7 @@ Rectangle {
 
     // Resizer handle on the right edge
     MouseArea {
+        id: resizer
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -49,7 +53,7 @@ Rectangle {
             if (pressed) {
                 let globalPos = mapToItem(null, mouse.x, mouse.y);
                 let newWidth = startWidth + (globalPos.x - startMouseX);
-                if (newWidth < 180) newWidth = 180;
+                if (newWidth < 240) newWidth = 240;   // locked minimum (the default width)
                 if (newWidth > 600) newWidth = 600;
                 window.sidebarWidth = newWidth;
             }
@@ -67,8 +71,14 @@ Rectangle {
 
     // Sidebar Layout
     ColumnLayout {
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
         anchors.margins: 12
+        // Fixed content width: while the panel slides open/closed, the root
+        // (clip: true) just clips this content instead of re-laying-out the whole
+        // file tree on every animation frame — that reflow was the slide jank.
+        width: window.sidebarWidth - 24
         spacing: 12
 
         SidebarHeader {
