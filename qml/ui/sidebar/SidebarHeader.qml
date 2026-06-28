@@ -87,10 +87,7 @@ Item {
         IconButton {
             iconText: "+"
             tooltipText: "New Note"
-            onClicked: {
-                console.log("New Note button clicked in SidebarHeader!");
-                root.newNoteRequested();
-            }
+            onClicked: root.newNoteRequested()
         }
 
         IconButton {

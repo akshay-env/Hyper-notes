@@ -10,10 +10,17 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Svg Network)
 qt_policy(SET QTP0001 NEW)
 
+# ── C++ sources (all under src/) ────────────────────────────────────────────
 qt_add_executable(appHyperLinkNotes
     main.cpp
-    VaultRepository.cpp
-    VaultRepository.h
+
+    # Core — vault model + QML view-model
+    src/core/VaultRepository.cpp
+    src/core/VaultRepository.h
+    src/core/VaultViewModel.cpp
+    src/core/VaultViewModel.h
+
+    # Vault — file-system operations
     src/vault/ScanDirectory.cpp
     src/vault/CreateFolder.cpp
     src/vault/CreateNote.cpp
@@ -33,17 +40,10 @@ qt_add_executable(appHyperLinkNotes
     src/vault/RestoreFromBin.h
     src/vault/DeleteFromBin.cpp
     src/vault/DeleteFromBin.h
-    VaultViewModel.cpp
-    VaultViewModel.h
-    MarkdownHighlighter.cpp
-    MarkdownHighlighter.h
-    src/markdown/HighlightLinks.cpp
-    src/markdown/HighlightHeaders.cpp
-    src/markdown/HighlightCodeBlocks.cpp
-    src/markdown/HighlightEmphasis.cpp
-    src/markdown/HighlightLists.cpp
-    ForceSimulation.cpp
-    ForceSimulation.h
+
+    # Physics — force-directed graph simulation
+    src/physics/ForceSimulation.cpp
+    src/physics/ForceSimulation.h
     src/physics/CalculateRepulsion.cpp
     src/physics/CalculateSprings.cpp
     src/physics/CalculateGravity.cpp
@@ -51,91 +51,116 @@ qt_add_executable(appHyperLinkNotes
     src/physics/CalculateCollision.cpp
     src/physics/PhysicsWorker.cpp
     src/physics/PhysicsWorker.h
+
+    # Graph — scene-graph edge renderer
     src/graph/BuildEdgeGeometry.cpp
     src/graph/GraphRenderer.cpp
+
+    # AI — LLM client
     src/ai/LlmService.cpp
     src/ai/LlmService.h
 )
 
-set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+# Theme.qml is a QML singleton.
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
+# ── QML module (all UI under qml/) ──────────────────────────────────────────
 qt_add_qml_module(appHyperLinkNotes
     URI HyperLinkNotes
     VERSION 1.0
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES
-        Main.qml
-        ui/editor/LivePreviewEditor.qml
-        Theme.qml
-        ui/core/TitleBar.qml
-        ui/core/TabStrip.qml
-        ui/core/NewTabView.qml
-        ui/dialogs/CustomDialog.qml
-        ui/components/IconButton.qml
-        ui/core/BinPanel.qml
-        ui/core/SettingsPanel.qml
-        ui/components/WindowControlButton.qml
-        ui/components/SidebarToggleButton.qml
-        ui/core/VaultSelectionOverlay.qml
-        ui/core/DragOverlay.qml
-        ui/core/EmptyState.qml
-        ui/dialogs/NewFolderDialog.qml
-        ui/dialogs/DeleteConfirmDialog.qml
-        ui/dialogs/RenameWarningPopup.qml
-        ui/editor/NoteEditor.qml
-        ui/editor/EditorHeader.qml
-        ui/editor/NoteTitle.qml
-        ui/editor/NoteBody.qml
-        ui/editor/NotePicker.qml
-        ui/sidebar/Sidebar.qml
-        ui/sidebar/SidebarHeader.qml
-        ui/sidebar/SidebarSearch.qml
-        ui/sidebar/FileTree.qml
-        ui/sidebar/FolderTreeItem.qml
-        ui/sidebar/TreeContextMenu.qml
-        ui/sidebar/TreeChevron.qml
-        scripts/window/toggleMaximize.js
-        scripts/window/deleteNodePermanently.js
-        scripts/window/openNewFolderDialog.js
-        scripts/tree/refreshTree.js
-        scripts/tree/search.js
-        scripts/tree/toggleExpansion.js
-        scripts/tree/runExpansionAnimation.js
-        scripts/tree/flattenVisible.js
-        scripts/tree/selectionUtils.js
-        scripts/tree/searchFlat.js
-        scripts/file/openFileByPath.js
-        scripts/file/saveTitleNow.js
-        scripts/file/createNewNote.js
-        scripts/file/createNoteInRoot.js
-        scripts/drag/handleDropPath.js
-        scripts/drag/beginDragProxy.js
-        scripts/drag/updateDragProxy.js
-        scripts/drag/endDragProxy.js
-        scripts/bin/refreshBinList.js
-        scripts/bin/flattenTree.js
-        scripts/editor/wrapSelectionInLink.js
-        scripts/editor/createNoteFromSelection.js
-        scripts/editor/openLink.js
-        scripts/editor/frontmatter.js
-        scripts/editor/buildContext.js
-        scripts/editor/branchNote.js
-        scripts/navigation/pushHistory.js
-        scripts/navigation/goBack.js
-        scripts/navigation/goForward.js
-        scripts/graph/buildGraphData.js
-        scripts/graph/flattenNotes.js
-        scripts/graph/extractLinks.js
-        scripts/graph/buildGlobalGraph.js
-        scripts/graph/calculateLayers.js
-        scripts/graph/computePositions.js
-        scripts/graph/findNodeByPath.js
-        scripts/graph/getNeighbors.js
-        ui/graph/GraphView.qml
-        ui/graph/GraphNode.qml
+        qml/Main.qml
+        qml/Theme.qml
+
+        # Core chrome
+        qml/ui/core/TitleBar.qml
+        qml/ui/core/TabStrip.qml
+        qml/ui/core/NewTabView.qml
+        qml/ui/core/EmptyState.qml
+        qml/ui/core/BinPanel.qml
+        qml/ui/core/SettingsPanel.qml
+        qml/ui/core/DragOverlay.qml
+        qml/ui/core/VaultSelectionOverlay.qml
+
+        # Reusable components
+        qml/ui/components/IconButton.qml
+        qml/ui/components/WindowControlButton.qml
+        qml/ui/components/SidebarToggleButton.qml
+
+        # Dialogs
+        qml/ui/dialogs/CustomDialog.qml
+        qml/ui/dialogs/NewFolderDialog.qml
+        qml/ui/dialogs/DeleteConfirmDialog.qml
+        qml/ui/dialogs/RenameWarningPopup.qml
+
+        # Editor
+        qml/ui/editor/NoteEditor.qml
+        qml/ui/editor/EditorHeader.qml
+        qml/ui/editor/NoteTitle.qml
+        qml/ui/editor/NotePicker.qml
+        qml/ui/editor/LivePreviewEditor.qml
+
+        # Sidebar
+        qml/ui/sidebar/Sidebar.qml
+        qml/ui/sidebar/SidebarHeader.qml
+        qml/ui/sidebar/SidebarSearch.qml
+        qml/ui/sidebar/FileTree.qml
+        qml/ui/sidebar/TreeContextMenu.qml
+        qml/ui/sidebar/TreeChevron.qml
+
+        # Graph
+        qml/ui/graph/GraphView.qml
+        qml/ui/graph/GraphNode.qml
+
+        # Scripts — window
+        qml/scripts/window/toggleMaximize.js
+        qml/scripts/window/deleteNodePermanently.js
+        qml/scripts/window/openNewFolderDialog.js
+        # Scripts — tree
+        qml/scripts/tree/refreshTree.js
+        qml/scripts/tree/search.js
+        qml/scripts/tree/toggleExpansion.js
+        qml/scripts/tree/runExpansionAnimation.js
+        qml/scripts/tree/flattenVisible.js
+        qml/scripts/tree/selectionUtils.js
+        qml/scripts/tree/searchFlat.js
+        # Scripts — file
+        qml/scripts/file/openFileByPath.js
+        qml/scripts/file/saveTitleNow.js
+        qml/scripts/file/createNewNote.js
+        qml/scripts/file/createNoteInRoot.js
+        # Scripts — drag
+        qml/scripts/drag/handleDropPath.js
+        qml/scripts/drag/beginDragProxy.js
+        qml/scripts/drag/updateDragProxy.js
+        qml/scripts/drag/endDragProxy.js
+        # Scripts — bin
+        qml/scripts/bin/refreshBinList.js
+        qml/scripts/bin/flattenTree.js
+        # Scripts — editor
+        qml/scripts/editor/wrapSelectionInLink.js
+        qml/scripts/editor/createNoteFromSelection.js
+        qml/scripts/editor/openLink.js
+        qml/scripts/editor/frontmatter.js
+        qml/scripts/editor/buildContext.js
+        qml/scripts/editor/branchNote.js
+        # Scripts — navigation
+        qml/scripts/navigation/pushHistory.js
+        qml/scripts/navigation/goBack.js
+        qml/scripts/navigation/goForward.js
+        # Scripts — graph
+        qml/scripts/graph/buildGraphData.js
+        qml/scripts/graph/flattenNotes.js
+        qml/scripts/graph/extractLinks.js
+        qml/scripts/graph/buildGlobalGraph.js
+        qml/scripts/graph/calculateLayers.js
+        qml/scripts/graph/computePositions.js
+        qml/scripts/graph/findNodeByPath.js
+        qml/scripts/graph/getNeighbors.js
     RESOURCES
-        sidebar_toggle_filled.svg
-        sidebar_toggle_outline.svg
+        qml/assets/sidebar_toggle_filled.svg
+        qml/assets/sidebar_toggle_outline.svg
 )
 
 target_link_libraries(appHyperLinkNotes
@@ -144,6 +169,7 @@ target_link_libraries(appHyperLinkNotes
 
 target_include_directories(appHyperLinkNotes PRIVATE
     .
+    src/core
     src/graph
     src/physics
     src/ai

@@ -83,10 +83,7 @@ Rectangle {
 
         SidebarHeader {
             vaultFs: window.vaultFsRef
-            onNewNoteRequested: {
-                console.log("Sidebar caught newNoteRequested signal!");
-                CreateNote.createNewNote(window, vaultFs);
-            }
+            onNewNoteRequested: CreateNote.createNewNote(window, vaultFs)
             onNewFolderRequested: OpenFolderDialog.openNewFolderDialog(window.newFolderDialog)
         }
 

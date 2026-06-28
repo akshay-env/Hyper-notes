@@ -19,13 +19,13 @@ Rectangle {
         Image {
             anchors.fill: parent
             sourceSize: Qt.size(16, 16)
-            source: "qrc:/qt/qml/HyperLinkNotes/sidebar_toggle_outline.svg"
+            source: "qrc:/qt/qml/HyperLinkNotes/qml/assets/sidebar_toggle_outline.svg"
         }
 
         Image {
             anchors.fill: parent
             sourceSize: Qt.size(16, 16)
-            source: "qrc:/qt/qml/HyperLinkNotes/sidebar_toggle_filled.svg"
+            source: "qrc:/qt/qml/HyperLinkNotes/qml/assets/sidebar_toggle_filled.svg"
             opacity: root.sidebarOpen ? 1.0 : 0.0
             
             Behavior on opacity { 

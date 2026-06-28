@@ -25,7 +25,6 @@ Item {
     ListModel { id: lineModel }
 
     function loadFromText(t) {
-        var t0 = Date.now();
         // Detach the model while bulk-filling so the ListView lays out ONCE at the
         // end instead of reacting to every per-line insert — that per-insert churn
         // was what made opening a long note crawl.
@@ -36,7 +35,6 @@ Item {
         if (lineModel.count === 0) lineModel.append({ "src": "" });
         activeIndex = -1;
         if (listView) listView.model = lineModel;
-        console.log("[LPE] loaded " + lineModel.count + " lines in " + (Date.now() - t0) + "ms");
     }
     function collect() {
         var a = [];
