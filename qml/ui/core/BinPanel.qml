@@ -169,6 +169,7 @@ Item {
                     id: binListView
                     model: binModel
                     spacing: 4
+                    pixelAligned: true       // crisp text while scrolling (fixed-height rows)
 
                     delegate: Rectangle {
                         width: binListView.width

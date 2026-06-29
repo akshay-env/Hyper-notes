@@ -12,6 +12,7 @@
 #include "src/vault/GetBinTree.h"
 #include "src/vault/RestoreFromBin.h"
 #include "src/vault/DeleteFromBin.h"
+#include "src/vault/UpdateLinkTargets.h"
 
 namespace HyperLinkNotes::Core {
 
@@ -38,6 +39,11 @@ bool VaultRepository::isFileNameAvailable(const QString &currentFilePath, const 
 QString VaultRepository::renameFile(const QString &currentFilePath, const QString &newName) const
 {
     return Vault::renameFile(currentFilePath, newName);
+}
+
+QStringList VaultRepository::updateLinkTargets(const QString &vaultPath, const QString &oldTitle, const QString &newTitle) const
+{
+    return Vault::updateLinkTargets(vaultPath, oldTitle, newTitle);
 }
 
 bool VaultRepository::moveItem(const QString &sourcePath, const QString &destinationPath) const

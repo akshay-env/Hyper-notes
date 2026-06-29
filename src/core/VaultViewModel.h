@@ -47,6 +47,9 @@ public:
 
 signals:
     void vaultPathChanged();
+    // Emitted after a rename repoints [[wikilinks]] in other notes; carries the
+    // file paths whose contents changed (so an open note can reload itself).
+    void linksRepointed(const QStringList &changedPaths);
 
 private:
     Core::VaultRepository m_repository;

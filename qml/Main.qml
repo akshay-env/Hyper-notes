@@ -11,7 +11,6 @@ import "ui/dialogs"
 import "ui/sidebar"
 import "ui/editor"
 import "ui/graph"
-import "scripts/window/toggleMaximize.js" as ToggleMaximize
 import "scripts/window/deleteNodePermanently.js" as DeleteNode
 import "scripts/window/openNewFolderDialog.js" as OpenFolderDialog
 import "scripts/tree/refreshTree.js" as RefreshTree
@@ -37,6 +36,15 @@ ApplicationWindow {
     // Custom properties
     property bool sidebarOpen: true
     property int sidebarWidth: 240
+    // Right dock (Graph + Outline) — collapsible via the editor toolbar toggle.
+    property bool rightPanelOpen: true
+    property int rightPanelWidth: 280
+    // True only while the sidebar open/close slide is animating. The editor reads
+    // this to freeze text re-wrap during the slide (so the animation stays smooth)
+    // while still reflowing instantly on a manual resize drag. Cleared just after
+    // the 300ms animation finishes.
+    property bool sidebarAnimating: false
+    onSidebarOpenChanged: { sidebarAnimating = true; sidebarAnimTimer.restart(); }
     property var activeNote: null
     property var historyStack: []
     property int historyIndex: -1
@@ -44,6 +52,15 @@ ApplicationWindow {
     property string graphHighlightPath: ""
     property bool binOpen: false
     property bool settingsOpen: false
+    property bool noteSearchOpen: false
+    onNoteSearchOpenChanged: {
+        if (noteSearchOpen) {
+            noteSearchFocusTimer.restart();
+        } else {
+            noteSearchBar.reset();
+            if (noteEditor) noteEditor.searchClear();
+        }
+    }
 
     // ── Tabs ────────────────────────────────────────────────────────────────
     // Each tab is { path, name }. An empty tab has path === "" and shows the
@@ -80,6 +97,64 @@ ApplicationWindow {
     property int normalY: 100
     property int normalWidth: 800
     property int normalHeight: 600
+    // True only while the maximize/restore geometry animation is running.
+    property bool maximizing: false
+
+    // A frameless window doesn't get the OS maximize/restore animation (that's why
+    // it snapped instantly), so we animate the geometry ourselves — an
+    // Obsidian-style smooth grow/shrink. The editor freezes its text re-wrap while
+    // this runs (NoteEditor.freezeWidth) so the resize stays fluid; normalX/Y/W/H
+    // remember the pre-maximize geometry to restore back to.
+    ParallelAnimation {
+        id: maximizeAnim
+        onStarted: window.maximizing = true
+        onStopped: window.maximizing = false
+        NumberAnimation { id: maxAnimX; target: window; property: "x";      duration: Theme.animFast; easing.type: Easing.OutCubic }
+        NumberAnimation { id: maxAnimY; target: window; property: "y";      duration: Theme.animFast; easing.type: Easing.OutCubic }
+        NumberAnimation { id: maxAnimW; target: window; property: "width";  duration: Theme.animFast; easing.type: Easing.OutCubic }
+        NumberAnimation { id: maxAnimH; target: window; property: "height"; duration: Theme.animFast; easing.type: Easing.OutCubic }
+    }
+
+    function toggleMaximizeAnimated() {
+        if (window.isMaximized) {
+            maxAnimX.to = window.normalX;     maxAnimY.to = window.normalY;
+            maxAnimW.to = window.normalWidth; maxAnimH.to = window.normalHeight;
+            window.isMaximized = false;
+        } else {
+            window.normalX = window.x;         window.normalY = window.y;
+            window.normalWidth = window.width; window.normalHeight = window.height;
+            maxAnimX.to = window.screenAvailableX;     maxAnimY.to = window.screenAvailableY;
+            maxAnimW.to = window.screenAvailableWidth; maxAnimH.to = window.screenAvailableHeight;
+            window.isMaximized = true;
+        }
+        maximizeAnim.restart();
+    }
+
+    // Minimize: a frameless window also gets no OS minimize animation (it just
+    // vanished instantly), so we fade the window out with a small downward slide,
+    // THEN park it in the taskbar and restore opacity/position (while hidden) so it
+    // returns clean. Only opacity + y animate → no editor reflow, so no freeze.
+    property real _minRestoreY: 0
+    SequentialAnimation {
+        id: minimizeAnim
+        ParallelAnimation {
+            NumberAnimation { target: window; property: "opacity"; to: 0; duration: 240; easing.type: Easing.InCubic }
+            NumberAnimation { id: minAnimY; target: window; property: "y"; duration: 240; easing.type: Easing.InCubic }
+        }
+        ScriptAction {
+            script: {
+                window.showMinimized();
+                window.y = window._minRestoreY;
+                window.opacity = 1;
+            }
+        }
+    }
+
+    function animateMinimize() {
+        window._minRestoreY = window.y;
+        minAnimY.to = window.y + 40;
+        minimizeAnim.restart();
+    }
 
     property int screenAvailableX: Screen.virtualX !== undefined ? Screen.virtualX : 0
     property int screenAvailableY: Screen.virtualY !== undefined ? Screen.virtualY : 0
@@ -332,29 +407,48 @@ ApplicationWindow {
             anchors.top: parent.top
             isMaximized: window.isMaximized
             sidebarOpen: window.sidebarOpen
+            title: vaultFs.vaultPath ? vaultFs.vaultPath.split(/[\\/]/).pop() : "HyperLinkNotes"
 
             onToggleSidebar: window.sidebarOpen = !window.sidebarOpen
-            onToggleMaximize: ToggleMaximize.toggleMaximize(window)
-            onMinimize: window.showMinimized()
+            onToggleMaximize: window.toggleMaximizeAnimated()
+            onMinimize: window.animateMinimize()
             onCloseWindow: window.close()
             onStartSystemMove: window.startSystemMove()
+        }
+
+        // Full-width divider under the title bar — separates it from the tabs row
+        // and the sidebar header (which now align on the same level).
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: titleBar.bottom
+            height: 1
+            color: Theme.border
+            z: 10
         }
 
         Sidebar {
             id: sidebar
             anchors.left: parent.left
             anchors.top: titleBar.bottom
-            anchors.bottom: parent.bottom
+            anchors.bottom: statusBar.top
+        }
+
+        // Right dock: live mini-graph + clickable outline (collapsible).
+        RightPanel {
+            id: rightPanel
+            anchors.right: parent.right
+            anchors.top: titleBar.bottom
+            anchors.bottom: statusBar.top
+            editorRef: noteEditor
         }
 
         Rectangle {
             id: mainContent
             anchors.left: sidebar.right
-            anchors.right: parent.right
+            anchors.right: rightPanel.left
             anchors.top: titleBar.bottom
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: 1
-            anchors.bottomMargin: 1
+            anchors.bottom: statusBar.top
             color: Theme.bg
 
             // Tab bar — always present (shows just "+" when no tabs are open)
@@ -366,7 +460,18 @@ ApplicationWindow {
                 height: 36
             }
 
-            // Persistent toolbar: back/forward, breadcrumb, graph-view toggle.
+            // Full-width divider under the toolbar (matches the tab-strip divider).
+            Rectangle {
+                id: toolbarDivider
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: editorHeader.bottom
+                height: 1
+                color: Theme.border
+                z: 3
+            }
+
+            // Persistent toolbar: breadcrumb, back/forward, find, side-panel toggle.
             // Always visible, independent of whether a note is open.
             EditorHeader {
                 id: editorHeader
@@ -378,13 +483,53 @@ ApplicationWindow {
             }
 
             NoteEditor {
+                id: noteEditor
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: editorHeader.bottom
                 anchors.bottom: parent.bottom
                 anchors.margins: 16
+                // Pull the bottom in so the Ask-AI bar lines up with the sidebar's
+                // Bin/Settings row, which sits 12px above the status bar.
+                anchors.bottomMargin: 12
                 visible: window.activeNote !== null && !window.graphViewActive
                 llmService: llm
+            }
+
+            // Click anywhere in the editor (outside the find bar) to close search.
+            // No onWheel, so scrolling still passes through to the editor.
+            MouseArea {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: searchSlot.bottom
+                anchors.bottom: parent.bottom
+                visible: window.noteSearchOpen && window.activeNote !== null && !window.graphViewActive
+                z: 4
+                onClicked: window.noteSearchOpen = false
+            }
+
+            // In-note find bar — slides down from the toolbar line (the purple line)
+            // and back up. The bar fills the slot and is revealed top-first as the
+            // slot's height animates open.
+            Item {
+                id: searchSlot
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: editorHeader.bottom
+                clip: true
+                z: 5
+                height: (window.noteSearchOpen && window.activeNote !== null && !window.graphViewActive)
+                        ? noteSearchBar.height : 0
+                Behavior on height { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutCubic } }
+
+                NoteSearchBar {
+                    id: noteSearchBar
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    editor: noteEditor
+                    onCloseRequested: window.noteSearchOpen = false
+                }
             }
 
             // Empty-tab placeholder
@@ -465,6 +610,15 @@ ApplicationWindow {
                 }
             }
         }
+
+        // Bottom status bar: save state, word count, and the open note's path.
+        StatusBar {
+            id: statusBar
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            editorRef: noteEditor
+        }
     }
 
     // Timer to clear the sidebar highlight after 1 second
@@ -474,6 +628,12 @@ ApplicationWindow {
         repeat: false
         onTriggered: window.graphHighlightPath = ""
     }
+
+    // Clears sidebarAnimating just after the 300ms open/close slide settles.
+    Timer { id: sidebarAnimTimer; interval: 320; onTriggered: window.sidebarAnimating = false }
+
+    // Focus the find field once the slide-down bar is in place.
+    Timer { id: noteSearchFocusTimer; interval: 60; onTriggered: noteSearchBar.focusField() }
 
     VaultSelectionOverlay {
         visible: vaultFs.vaultPath === ""

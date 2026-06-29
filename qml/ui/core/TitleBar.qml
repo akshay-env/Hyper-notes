@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import HyperLinkNotes
 import "../components"
 
 Rectangle {
@@ -9,6 +10,7 @@ Rectangle {
 
     property bool isMaximized: false
     property bool sidebarOpen: true
+    property string title: ""
 
     signal toggleSidebar()
     signal toggleMaximize()
@@ -40,6 +42,21 @@ Rectangle {
         z: 1
         onPressed: root.startSystemMove()
         onDoubleClicked: root.toggleMaximize()
+    }
+
+    // App / vault title (sits above the drag area; Text is transparent to mouse
+    // events so dragging the window still works through it).
+    Text {
+        anchors.left: toggleButton.right
+        anchors.leftMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.title
+        color: Theme.text
+        font.pixelSize: 13
+        font.family: "Segoe UI"
+        font.bold: true
+        elide: Text.ElideRight
+        z: 2
     }
 
     // Window controls

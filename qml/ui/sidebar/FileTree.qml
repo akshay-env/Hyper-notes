@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import HyperLinkNotes
+import "../components"
 import "../../scripts/drag/handleDropPath.js" as HandleDrop
 import "../../scripts/drag/beginDragProxy.js" as BeginDrag
 import "../../scripts/drag/updateDragProxy.js" as UpdateDrag
@@ -121,6 +122,7 @@ Item {
         clip: true
         model: fileTreeRoot.flatRows
         cacheBuffer: 600
+        pixelAligned: true               // crisp text while scrolling (rows are fixed-height, so no re-estimation jitter)
         boundsBehavior: Flickable.StopAtBounds
 
         delegate: Rectangle {
@@ -293,6 +295,7 @@ Item {
         model: fileTreeRoot.searchResults
         boundsBehavior: Flickable.StopAtBounds
         cacheBuffer: 200
+        pixelAligned: true               // crisp text while scrolling (fixed-height rows)
 
         delegate: Rectangle {
             width: searchList.width
@@ -341,4 +344,15 @@ Item {
             font.family: "Segoe UI"
         }
     }
+
+    // Smooth, higher-sensitivity mouse-wheel scrolling for the tree / search list.
+    SmoothWheel {
+        anchors.fill: parent
+        flick: fileTreeRoot.searching ? searchList : treeList
+        step: 140
+    }
+
+    // Themed scrollbar overlays (only one list is visible at a time).
+    ThemedScrollBar { flick: treeList }
+    ThemedScrollBar { flick: searchList }
 }

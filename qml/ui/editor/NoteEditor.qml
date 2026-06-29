@@ -7,6 +7,7 @@ import "../../scripts/tree/refreshTree.js" as RefreshTree
 import "../../scripts/editor/frontmatter.js" as FM
 import "../../scripts/editor/buildContext.js" as BuildContext
 import "../../scripts/editor/openLink.js" as OpenLink
+import "../../scripts/file/openFileByPath.js" as OpenFile
 
 ColumnLayout {
     id: root
@@ -14,6 +15,28 @@ ColumnLayout {
     visible: window.activeNote !== null
 
     property string currentLoadedPath: ""
+
+    // ── Exposed editor state (read by RightPanel / Outline / StatusBar) ───────
+    // Live document text, word count, and the debounced-save status.
+    property alias editorText: cmEditor.text
+    readonly property int wordCount: {
+        var t = cmEditor.text ? cmEditor.text.trim() : "";
+        if (t.length === 0) return 0;
+        var m = t.match(/\S+/g);
+        return m ? m.length : 0;
+    }
+    // False only while the debounced save timer is pending (i.e. "Saving…").
+    property bool saved: !saveTimer.running
+    // Scroll the editor to a source line (used by the Outline panel's headings).
+    function scrollToLine(i) { cmEditor.scrollToLine(i); }
+
+    // ── In-note search (driven by the slide-down search bar in Main) ──────────
+    readonly property int searchCount: cmEditor.searchCount
+    readonly property int searchCurrent: cmEditor.searchCurrent
+    function searchRun(q) { return cmEditor.runSearch(q); }
+    function searchNext() { cmEditor.nextMatch(); }
+    function searchPrev() { cmEditor.prevMatch(); }
+    function searchClear() { cmEditor.clearSearch(); }
 
     // ── AI ───────────────────────────────────────────────────────────────────
     // Shared LLM client (set from Main) + transient ask state.
@@ -100,30 +123,50 @@ ColumnLayout {
     Timer { id: askErrorTimer; interval: 6000; onTriggered: root.askError = "" }
     Timer { id: askFocusTimer; interval: 230; onTriggered: askField.forceActiveFocus() }
 
+    // Seed the pinned title field on load / note switch.
+    function applyTitleState(name, path) {
+        titleField.text = name;
+        titleField.editingPath = path;
+        titleField.editingOriginalName = name;
+    }
+
     // Sync editor text fields when activeNote changes
     Connections {
         target: window
         function onActiveNoteChanged() {
             if (window.activeNote) {
                 if (window.activeNote.path !== currentLoadedPath) {
-                    noteTitle.text = window.activeNote.name.replace(/\.md$/i, "");
+                    var name = window.activeNote.name.replace(/\.md$/i, "");
                     cmEditor.text = window.activeNote.path ? vaultFs.readFile(window.activeNote.path) : (window.activeNote.content || "");
                     currentLoadedPath = window.activeNote.path;
-                    noteTitle.editingPath = window.activeNote.path;
-                    noteTitle.editingOriginalName = window.activeNote.name.replace(/\.md$/i, "");
+                    root.applyTitleState(name, window.activeNote.path);
                 }
             } else {
-                noteTitle.text = "";
                 cmEditor.text = "";
                 currentLoadedPath = "";
-                noteTitle.editingPath = "";
-                noteTitle.editingOriginalName = "";
+                root.applyTitleState("", "");
             }
         }
     }
 
+    // A rename repointed [[wikilinks]] across the vault. If the note open right
+    // now was one of the rewritten files, reload it so the editor shows the new
+    // link targets instead of stale ones (and doesn't save over the change).
+    Connections {
+        target: window.vaultFsRef
+        function onLinksRepointed(changedPaths) {
+            if (window.activeNote && window.activeNote.path
+                    && changedPaths.indexOf(window.activeNote.path) !== -1) {
+                cmEditor.text = window.vaultFsRef.readFile(window.activeNote.path);
+            }
+        }
+    }
+
+    // Pinned note title — stays at the top of the editor instead of riding as the
+    // scrolling ListView header (which slid away and looked "cut out" on scroll).
+    // The body (cmEditor) scrolls beneath it; applyTitleState() seeds it.
     NoteTitle {
-        id: noteTitle
+        id: titleField
         Layout.fillWidth: true
         vaultFs: window.vaultFsRef
 
@@ -134,20 +177,18 @@ ColumnLayout {
                     window.activeNote.path = newPath;
                     window.activeNote.name = newName + (newName.endsWith(".md") || newName.endsWith(".txt") ? "" : ".md");
                     root.currentLoadedPath = newPath; // Prevent file reload on refresh
-                    noteTitle.editingPath = newPath;
-                    noteTitle.editingOriginalName = newName;
+                    titleField.editingPath = newPath;
+                    titleField.editingOriginalName = newName;
                     // Keep the open tab pointing at the renamed file
                     window.updateActiveTabLabel(newPath, newName);
                 }
                 RefreshTree.refreshTree(window, window.vaultFsRef);
             } else {
-                noteTitle.text = noteTitle.editingOriginalName;
+                titleField.text = titleField.editingOriginalName;
             }
         }
 
-        onTitleAccepted: {
-            cmEditor.focusEditor();
-        }
+        onTitleAccepted: cmEditor.focusEditor()
     }
 
     // Native live-preview editor. Exposes text / edited / linkClicked /
@@ -157,10 +198,39 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
 
+        // Freeze text re-wrap during the sidebar open/close animation AND the
+        // window maximize/restore animation, so those slides stay smooth; a manual
+        // resize drag (both flags false) keeps reflowing live and instant.
+        freezeWidth: window.sidebarAnimating || window.maximizing
+
         // Debounced save: edits (typed or AI-streamed) restart the timer; it
         // persists the live text once things go quiet.
         onEdited: (text) => saveTimer.restart()
         onLinkClicked: (target) => OpenLink.openLink(window, window.vaultFsRef, target)
+        onOpenAllRequested: (targets) => OpenLink.openAllInTabs(window, window.vaultFsRef, targets)
+
+        // "Create new note" from a multi-link menu: make a fresh note in this
+        // note's folder, append it to the clicked link, save THIS note, then open
+        // the new one for editing.
+        onCreateNoteForLink: (lineIndex, linkStart, linkEnd) => {
+            var vaultFs = window.vaultFsRef;
+            if (!vaultFs) return;
+            var parentPath = vaultFs.vaultPath;
+            if (window.activeNote && window.activeNote.path) {
+                var p = window.activeNote.path;
+                var ls = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+                if (ls !== -1) parentPath = p.substring(0, ls);
+            }
+            if (vaultFs.createNote(parentPath, "Untitled")) {
+                var newPath = vaultFs.getLastCreatedPath();
+                var newTitle = newPath.replace(/^.*[\\/]/, "").replace(/\.md$/i, "");
+                cmEditor.addTargetToLink(lineIndex, linkStart, linkEnd, newTitle);
+                if (window.activeNote && window.activeNote.path)
+                    vaultFs.saveFile(window.activeNote.path, cmEditor.text);
+                RefreshTree.refreshTree(window, vaultFs);
+                OpenFile.openFileByPath(window, newPath);
+            }
+        }
     }
 
     Timer {
@@ -199,17 +269,20 @@ ColumnLayout {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 height: 44
-                // Collapsed = just the button (transparent shell); expanded slides
-                // the field out to the left, filling the full editor width.
-                width: root.askExpanded ? parent.width : 78
+                // Collapsed = just the button (transparent shell); expanded fills
+                // the full editor width. Width is driven by an animated `expansion`
+                // factor (0→1) rather than animating width directly, so the
+                // collapse/expand keeps its smooth slide while a PANEL RESIZE flows
+                // through parent.width instantly (only `expansion` is animated).
+                property real expansion: root.askExpanded ? 1 : 0
+                Behavior on expansion { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                width: 78 + Math.max(0, parent.width - 78) * expansion
                 radius: 10
                 color: root.askExpanded ? Theme.surface : "transparent"
                 border.color: root.askExpanded ? (askField.activeFocus ? Theme.accent : Theme.border)
                                                : "transparent"
                 border.width: 1
                 clip: true
-
-                Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
                 TextField {
                     id: askField

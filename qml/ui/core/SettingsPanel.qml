@@ -460,6 +460,7 @@ Item {
                                     id: modelList
                                     model: settingsPanel._models
                                     spacing: 1
+                                    pixelAligned: true   // crisp text while scrolling (fixed-height rows)
                                     delegate: Rectangle {
                                         width: modelList.width
                                         height: 30

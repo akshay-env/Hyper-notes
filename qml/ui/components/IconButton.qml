@@ -16,7 +16,7 @@ Rectangle {
     property bool iconBold: false
 
     color: mouseArea.pressed ? pressedColor : (mouseArea.containsMouse ? hoverColor : defaultColor)
-    radius: 4
+    radius: 6
     implicitWidth: 28
     implicitHeight: 28
 

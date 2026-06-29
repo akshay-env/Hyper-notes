@@ -2,6 +2,7 @@
 #define VAULTREPOSITORY_H
 
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -22,7 +23,9 @@ public:
     [[nodiscard]] bool moveItem(const QString &sourcePath, const QString &destinationPath) const;
     [[nodiscard]] bool isFileNameAvailable(const QString &currentFilePath, const QString &newName) const;
     [[nodiscard]] QString renameFile(const QString &currentFilePath, const QString &newName) const;
-    
+    // Repoints [[wikilink]] targets oldTitle → newTitle across the vault. Returns changed file paths.
+    [[nodiscard]] QStringList updateLinkTargets(const QString &vaultPath, const QString &oldTitle, const QString &newTitle) const;
+
     // I/O
     [[nodiscard]] QString readFile(const QString &path) const;
     [[nodiscard]] bool saveFile(const QString &path, const QString &content) const;

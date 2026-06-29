@@ -80,55 +80,78 @@ Rectangle {
             color: Theme.border
         }
 
-        // Graph View toggle button
+        // Find-in-note toggle — opens the slide-down search bar.
         IconButton {
             implicitWidth: 36
             implicitHeight: 36
-            tooltipText: window.graphViewActive ? "Close Graph View" : "Graph View"
-            opacity: window.graphViewActive ? 1.0 : 0.7
-            defaultColor: window.graphViewActive ? Theme.accentSoft : "transparent"
-            onClicked: {
-                window.graphViewActive = !window.graphViewActive;
-            }
+            tooltipText: "Find in note"
+            enabled: window.activeNote !== null
+            opacity: window.activeNote === null ? 0.25 : (window.noteSearchOpen ? 1.0 : 0.7)
+            defaultColor: window.noteSearchOpen ? Theme.accentSoft : "transparent"
+            onClicked: window.noteSearchOpen = !window.noteSearchOpen
 
-            // Graph glyph: three interconnected nodes, drawn as OUTLINED circles +
-            // connecting edges to match the app's other line icons (trash/folder/gear).
             Canvas {
                 anchors.centerIn: parent
-                width: 22
-                height: 22
-                property color tint: window.graphViewActive ? Theme.accentText : Theme.textDim
+                width: 20
+                height: 20
+                property color tint: window.noteSearchOpen ? Theme.accentText : Theme.textDim
                 onTintChanged: requestPaint()
                 onPaint: {
-                    var ctx = getContext("2d");
-                    ctx.reset();
-                    ctx.lineCap = "round";
-                    ctx.lineJoin = "round";
-                    ctx.strokeStyle = tint;
-                    ctx.lineWidth = 1.3;
+                    var c = getContext("2d");
+                    c.reset();
+                    c.strokeStyle = tint;
+                    c.lineWidth = 1.6;
+                    c.lineCap = "round";
+                    c.beginPath();
+                    c.arc(8.4, 8.4, 5, 0, Math.PI * 2);   // lens
+                    c.stroke();
+                    c.beginPath();
+                    c.moveTo(12.1, 12.1); c.lineTo(16.6, 16.6);   // handle
+                    c.stroke();
+                }
+            }
+        }
 
-                    var n = [[11, 4.6], [5.2, 16.4], [16.8, 16.4]];
-                    var r = 2.7;
-                    var edges = [[0, 1], [1, 2], [2, 0]];
+        // Right-panel (Graph + Outline) collapse toggle — the right column is FILLED
+        // when the panel is open and just an OUTLINE when collapsed (same filled/empty
+        // idea as the sidebar toggle, animated, with no accent glow).
+        IconButton {
+            id: panelBtn
+            implicitWidth: 36
+            implicitHeight: 36
+            tooltipText: window.rightPanelOpen ? "Hide side panel" : "Show side panel"
+            onClicked: window.rightPanelOpen = !window.rightPanelOpen
 
-                    // Edges connect the circle perimeters (not centres) for a clean look.
-                    for (var e = 0; e < edges.length; e++) {
-                        var a = n[edges[e][0]], b = n[edges[e][1]];
-                        var dx = b[0] - a[0], dy = b[1] - a[1];
-                        var d = Math.sqrt(dx * dx + dy * dy);
-                        var ux = dx / d, uy = dy / d;
-                        ctx.beginPath();
-                        ctx.moveTo(a[0] + ux * r, a[1] + uy * r);
-                        ctx.lineTo(b[0] - ux * r, b[1] - uy * r);
-                        ctx.stroke();
+            Item {
+                id: panelGlyph
+                anchors.centerIn: parent
+                width: 20
+                height: 20
+                property color tint: panelBtn.containsMouse ? Theme.text : Theme.textDim
+
+                // Frame + right-column divider (outline, always shown).
+                Canvas {
+                    anchors.fill: parent
+                    property color tint: panelGlyph.tint
+                    onTintChanged: requestPaint()
+                    onPaint: {
+                        var c = getContext("2d");
+                        c.reset();
+                        c.strokeStyle = tint;
+                        c.lineWidth = 1.4;
+                        c.lineJoin = "round";
+                        c.beginPath(); c.rect(2.5, 3.5, 15, 13); c.stroke();          // frame
+                        c.beginPath(); c.moveTo(12.5, 3.5); c.lineTo(12.5, 16.5); c.stroke();  // divider
                     }
+                }
 
-                    // Hollow nodes on top.
-                    for (var i = 0; i < n.length; i++) {
-                        ctx.beginPath();
-                        ctx.arc(n[i][0], n[i][1], r, 0, Math.PI * 2);
-                        ctx.stroke();
-                    }
+                // Filled right column — visible only while the panel is open (animated).
+                Rectangle {
+                    x: 12.5; y: 3.5
+                    width: 5; height: 13
+                    color: panelGlyph.tint
+                    opacity: window.rightPanelOpen ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
                 }
             }
         }

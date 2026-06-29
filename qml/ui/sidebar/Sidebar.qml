@@ -21,13 +21,13 @@ Rectangle {
         NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
     }
 
-    // Right border line for the sidebar
+    // Right border line for the sidebar — the seam to the editor pane.
     Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: 1
-        color: Theme.divider
+        color: Theme.border
     }
 
     // Resizer handle on the right edge
@@ -74,14 +74,20 @@ Rectangle {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.margins: 12
+        anchors.leftMargin: 12
+        anchors.bottomMargin: 12
+        // No top inset: the header sits at the TAB-STRIP level and the search drops
+        // into the TOOLBAR level, so the sidebar lines up with the editor's tabs and
+        // nav/search row on the right (header↔tabs, search↔back/forward/find).
+        anchors.topMargin: 0
         // Fixed content width: while the panel slides open/closed, the root
         // (clip: true) just clips this content instead of re-laying-out the whole
         // file tree on every animation frame — that reflow was the slide jank.
         width: window.sidebarWidth - 24
-        spacing: 12
+        spacing: 0
 
         SidebarHeader {
+            Layout.preferredHeight: 36       // match the tab-strip band (centers with the tabs)
             vaultFs: window.vaultFsRef
             onNewNoteRequested: CreateNote.createNewNote(window, vaultFs)
             onNewFolderRequested: OpenFolderDialog.openNewFolderDialog(window.newFolderDialog)
@@ -89,24 +95,27 @@ Rectangle {
 
         SidebarSearch {
             Layout.fillWidth: true
+            Layout.topMargin: 4              // drop into the toolbar band (centers with the nav buttons)
         }
 
         FileTree {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.topMargin: 12
             vaultFs: window.vaultFsRef
         }
 
         // Bottom bar — Bin tile + Settings gear, pinned to the bottom
         RowLayout {
             Layout.fillWidth: true
+            Layout.topMargin: 12
             spacing: 8
 
         Rectangle {
             id: binTile
             Layout.fillWidth: true
-            Layout.preferredHeight: 40
-            radius: 6
+            Layout.preferredHeight: 38   // shorter rounded rectangle (matches the Settings tile)
+            radius: 7
             color: binMouse.containsMouse ? Theme.elevated : Theme.surface2
             border.color: Theme.border
             border.width: 1
@@ -164,8 +173,8 @@ Rectangle {
         Rectangle {
             id: settingsTile
             Layout.preferredWidth: 44
-            Layout.preferredHeight: 40
-            radius: 6
+            Layout.preferredHeight: 38   // rectangle-ish (wider than tall), not a square
+            radius: 7
             color: settingsMouse.containsMouse ? Theme.elevated : Theme.surface2
             border.color: Theme.border
             border.width: 1

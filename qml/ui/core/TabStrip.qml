@@ -24,6 +24,16 @@ Rectangle {
         return Math.max(24, Math.min(maxTabWidth, avail / tabCount));
     }
 
+    // Full-width bottom divider separating the tab strip from the content below.
+    // Declared before the tabs so the active tab's gold underline draws over it.
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 1
+        color: Theme.border
+    }
+
     Row {
         id: tabsRow
         anchors.left: parent.left
@@ -49,9 +59,10 @@ Rectangle {
                     width: parent.width
                     height: parent.height
                     x: 0
-                    // Active tab matches the editor pane so they merge into a
-                    // single surface; inactive tabs stay on the darker bar.
-                    color: tabItem.isActive ? Theme.bg
+                    // Active tab reads via the gold underline + brighter text; the
+                    // bar/active fills stay flat now that a divider separates the
+                    // strip from the content below.
+                    color: tabItem.isActive ? "transparent"
                                             : (dragArea.containsMouse ? Theme.surface : "transparent")
                     opacity: dragArea.dragging ? 0.85 : 1.0
 
@@ -67,14 +78,15 @@ Rectangle {
                         visible: !tabItem.isActive
                     }
 
-                    // Active-tab top accent
+                    // Active-tab gold underline — sits over the strip divider.
                     Rectangle {
-                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
                         height: 2
                         color: Theme.accent
                         visible: tabItem.isActive
+                        z: 5
                     }
 
                     Text {

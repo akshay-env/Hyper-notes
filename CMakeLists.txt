@@ -40,6 +40,8 @@ qt_add_executable(appHyperLinkNotes
     src/vault/RestoreFromBin.h
     src/vault/DeleteFromBin.cpp
     src/vault/DeleteFromBin.h
+    src/vault/UpdateLinkTargets.cpp
+    src/vault/UpdateLinkTargets.h
 
     # Physics — force-directed graph simulation
     src/physics/ForceSimulation.cpp
@@ -82,24 +84,27 @@ qt_add_qml_module(appHyperLinkNotes
         qml/ui/core/SettingsPanel.qml
         qml/ui/core/DragOverlay.qml
         qml/ui/core/VaultSelectionOverlay.qml
+        qml/ui/core/RightPanel.qml
+        qml/ui/core/Outline.qml
+        qml/ui/core/StatusBar.qml
 
         # Reusable components
         qml/ui/components/IconButton.qml
         qml/ui/components/WindowControlButton.qml
         qml/ui/components/SidebarToggleButton.qml
+        qml/ui/components/SmoothWheel.qml
+        qml/ui/components/ThemedScrollBar.qml
 
         # Dialogs
-        qml/ui/dialogs/CustomDialog.qml
         qml/ui/dialogs/NewFolderDialog.qml
         qml/ui/dialogs/DeleteConfirmDialog.qml
-        qml/ui/dialogs/RenameWarningPopup.qml
 
         # Editor
         qml/ui/editor/NoteEditor.qml
         qml/ui/editor/EditorHeader.qml
         qml/ui/editor/NoteTitle.qml
-        qml/ui/editor/NotePicker.qml
         qml/ui/editor/LivePreviewEditor.qml
+        qml/ui/editor/NoteSearchBar.qml
 
         # Sidebar
         qml/ui/sidebar/Sidebar.qml
@@ -112,17 +117,14 @@ qt_add_qml_module(appHyperLinkNotes
         # Graph
         qml/ui/graph/GraphView.qml
         qml/ui/graph/GraphNode.qml
+        qml/ui/graph/MiniGraph.qml
 
         # Scripts — window
-        qml/scripts/window/toggleMaximize.js
         qml/scripts/window/deleteNodePermanently.js
         qml/scripts/window/openNewFolderDialog.js
         # Scripts — tree
         qml/scripts/tree/refreshTree.js
         qml/scripts/tree/search.js
-        qml/scripts/tree/toggleExpansion.js
-        qml/scripts/tree/runExpansionAnimation.js
-        qml/scripts/tree/flattenVisible.js
         qml/scripts/tree/selectionUtils.js
         qml/scripts/tree/searchFlat.js
         # Scripts — file
@@ -139,12 +141,9 @@ qt_add_qml_module(appHyperLinkNotes
         qml/scripts/bin/refreshBinList.js
         qml/scripts/bin/flattenTree.js
         # Scripts — editor
-        qml/scripts/editor/wrapSelectionInLink.js
-        qml/scripts/editor/createNoteFromSelection.js
         qml/scripts/editor/openLink.js
         qml/scripts/editor/frontmatter.js
         qml/scripts/editor/buildContext.js
-        qml/scripts/editor/branchNote.js
         # Scripts — navigation
         qml/scripts/navigation/pushHistory.js
         qml/scripts/navigation/goBack.js

@@ -8,17 +8,24 @@ Rectangle {
     height: 32
     color: controlArea.containsMouse ? (iconType === "close" ? Theme.danger : Qt.rgba(1, 1, 1, 0.08)) : "transparent"
 
-    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+    // Calm, smooth hover: the highlight fades in and the glyph brightens together
+    // over a gentle ease — no scale, no jump. Both transitions share `animMed` so
+    // they move as one.
+    Behavior on color { ColorAnimation { duration: Theme.animMed; easing.type: Easing.OutCubic } }
 
     property string iconType: "minimize" // "minimize", "maximize", "restore", "close"
     signal clicked()
+
+    // Single animated glyph colour so every icon part brightens in sync on hover.
+    property color iconColor: controlArea.containsMouse ? Theme.text : Theme.textDim
+    Behavior on iconColor { ColorAnimation { duration: Theme.animMed; easing.type: Easing.OutCubic } }
 
     // Minimize Line
     Rectangle {
         anchors.centerIn: parent
         width: 10
         height: 1
-        color: controlArea.containsMouse ? Theme.text : Theme.textDim
+        color: root.iconColor
         visible: root.iconType === "minimize"
     }
 
@@ -28,7 +35,7 @@ Rectangle {
         width: 10
         height: 10
         color: "transparent"
-        border.color: controlArea.containsMouse ? Theme.text : Theme.textDim
+        border.color: root.iconColor
         border.width: 1
         visible: root.iconType === "maximize"
     }
@@ -39,17 +46,17 @@ Rectangle {
         width: 10
         height: 10
         visible: root.iconType === "restore"
-        
+
         Rectangle {
             x: 2; y: 0; width: 8; height: 8
             color: "transparent"
-            border.color: controlArea.containsMouse ? Theme.text : Theme.textDim
+            border.color: root.iconColor
             border.width: 1
         }
         Rectangle {
             x: 0; y: 2; width: 8; height: 8
             color: root.color === "transparent" ? Theme.bg : root.color
-            border.color: controlArea.containsMouse ? Theme.text : Theme.textDim
+            border.color: root.iconColor
             border.width: 1
         }
     }
@@ -66,14 +73,14 @@ Rectangle {
             width: 12
             height: 1
             rotation: 45
-            color: controlArea.containsMouse ? Theme.text : Theme.textDim
+            color: root.iconColor
         }
         Rectangle {
             anchors.centerIn: parent
             width: 12
             height: 1
             rotation: -45
-            color: controlArea.containsMouse ? Theme.text : Theme.textDim
+            color: root.iconColor
         }
     }
 

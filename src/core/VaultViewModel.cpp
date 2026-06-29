@@ -1,5 +1,6 @@
 #include "VaultViewModel.h"
 #include <QUrl>
+#include <QFileInfo>
 
 namespace HyperLinkNotes::ViewModel {
 
@@ -64,7 +65,20 @@ bool VaultViewModel::isFileNameAvailable(const QString &currentFilePath, const Q
 
 QString VaultViewModel::renameFile(const QString &currentFilePath, const QString &newName)
 {
-    return m_repository.renameFile(currentFilePath, newName);
+    const QString oldTitle = QFileInfo(currentFilePath).completeBaseName();
+    const QString newPath = m_repository.renameFile(currentFilePath, newName);
+
+    // Renaming a note changes its title, so repoint every [[wikilink]] that
+    // pointed at the old title across the whole vault — otherwise those links
+    // would dangle and re-create a stale note when clicked.
+    if (!newPath.isEmpty() && newPath != currentFilePath) {
+        const QString newTitle = QFileInfo(newPath).completeBaseName();
+        if (!oldTitle.isEmpty() && oldTitle != newTitle) {
+            const QStringList changed = m_repository.updateLinkTargets(m_vaultPath, oldTitle, newTitle);
+            if (!changed.isEmpty()) emit linksRepointed(changed);
+        }
+    }
+    return newPath;
 }
 
 void VaultViewModel::setExpanded(const QString &path, bool expanded)
