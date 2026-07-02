@@ -45,6 +45,12 @@ ApplicationWindow {
     // the 300ms animation finishes.
     property bool sidebarAnimating: false
     onSidebarOpenChanged: { sidebarAnimating = true; sidebarAnimTimer.restart(); }
+    // Same idea for the right dock (Graph + Outline): the editor's right edge is
+    // anchored to the panel, so its width changes every frame of the 300ms slide.
+    // Freezing the editor's text re-wrap for that window keeps the collapse/expand
+    // smooth (it reflows once when the slide settles). Cleared just after it ends.
+    property bool rightPanelAnimating: false
+    onRightPanelOpenChanged: { rightPanelAnimating = true; rightPanelAnimTimer.restart(); }
     property var activeNote: null
     property var historyStack: []
     property int historyIndex: -1
@@ -97,62 +103,70 @@ ApplicationWindow {
     property int normalY: 100
     property int normalWidth: 800
     property int normalHeight: 600
-    // True only while the maximize/restore geometry animation is running.
-    property bool maximizing: false
-
-    // A frameless window doesn't get the OS maximize/restore animation (that's why
-    // it snapped instantly), so we animate the geometry ourselves — an
-    // Obsidian-style smooth grow/shrink. The editor freezes its text re-wrap while
-    // this runs (NoteEditor.freezeWidth) so the resize stays fluid; normalX/Y/W/H
+    // A frameless window gets no OS maximize/restore animation. The previous code
+    // tweened the native window's x/y/width/height frame-by-frame to fake one, but
+    // animating real geometry forces a native resize + a full relayout EVERY frame
+    // — that per-frame native resize was the stutter ("laggy / not functioning").
+    // Instead the geometry SNAPS straight to the target rect (the way native apps
+    // maximize), and the UI plays a brief GPU-only scale "settle" (maximizePop) so
+    // the toggle still feels animated with no mid-animation resizing. normalX/Y/W/H
     // remember the pre-maximize geometry to restore back to.
-    ParallelAnimation {
-        id: maximizeAnim
-        onStarted: window.maximizing = true
-        onStopped: window.maximizing = false
-        NumberAnimation { id: maxAnimX; target: window; property: "x";      duration: Theme.animFast; easing.type: Easing.OutCubic }
-        NumberAnimation { id: maxAnimY; target: window; property: "y";      duration: Theme.animFast; easing.type: Easing.OutCubic }
-        NumberAnimation { id: maxAnimW; target: window; property: "width";  duration: Theme.animFast; easing.type: Easing.OutCubic }
-        NumberAnimation { id: maxAnimH; target: window; property: "height"; duration: Theme.animFast; easing.type: Easing.OutCubic }
-    }
-
     function toggleMaximizeAnimated() {
         if (window.isMaximized) {
-            maxAnimX.to = window.normalX;     maxAnimY.to = window.normalY;
-            maxAnimW.to = window.normalWidth; maxAnimH.to = window.normalHeight;
+            window.x = window.normalX;         window.y = window.normalY;
+            window.width = window.normalWidth; window.height = window.normalHeight;
             window.isMaximized = false;
         } else {
             window.normalX = window.x;         window.normalY = window.y;
             window.normalWidth = window.width; window.normalHeight = window.height;
-            maxAnimX.to = window.screenAvailableX;     maxAnimY.to = window.screenAvailableY;
-            maxAnimW.to = window.screenAvailableWidth; maxAnimH.to = window.screenAvailableHeight;
+            window.x = window.screenAvailableX;         window.y = window.screenAvailableY;
+            window.width = window.screenAvailableWidth; window.height = window.screenAvailableHeight;
             window.isMaximized = true;
         }
-        maximizeAnim.restart();
+        maximizePop.restart();
     }
 
-    // Minimize: a frameless window also gets no OS minimize animation (it just
-    // vanished instantly), so we fade the window out with a small downward slide,
-    // THEN park it in the taskbar and restore opacity/position (while hidden) so it
-    // returns clean. Only opacity + y animate → no editor reflow, so no freeze.
-    property real _minRestoreY: 0
+    // The "settle": a quick scale-in of the whole UI right after the geometry snap.
+    // It's a render transform on `bg` (origin = centre), so it never changes the
+    // native window size or re-wraps the editor — just smooth, jank-free motion.
+    // `bg` and the window share Theme.bg, so the ~3% inset the scale leaves is
+    // invisible.
+    NumberAnimation {
+        id: maximizePop
+        target: bg
+        property: "scale"
+        from: 0.97
+        to: 1.0
+        duration: 180
+        easing.type: Easing.OutCubic
+    }
+
+    // Minimize: a frameless window gets no OS genie animation. The old version slid
+    // the native window DOWN 40px (a per-frame native move) while fading — that
+    // lurch is what looked ugly/out of place. Instead we play a quick GPU-only
+    // shrink-and-fade toward the taskbar: `bg` scales down from its BOTTOM edge
+    // while the window fades out — then park it in the taskbar and reset
+    // scale/opacity/origin while hidden so it returns clean. Only bg.scale +
+    // window.opacity animate (no native move/resize), so it's smooth and matches
+    // the maximize "settle".
     SequentialAnimation {
         id: minimizeAnim
+        ScriptAction { script: bg.transformOrigin = Item.Bottom }   // collapse toward the taskbar
         ParallelAnimation {
-            NumberAnimation { target: window; property: "opacity"; to: 0; duration: 240; easing.type: Easing.InCubic }
-            NumberAnimation { id: minAnimY; target: window; property: "y"; duration: 240; easing.type: Easing.InCubic }
+            NumberAnimation { target: bg;     property: "scale";   from: 1.0; to: 0.90; duration: 180; easing.type: Easing.InCubic }
+            NumberAnimation { target: window; property: "opacity"; from: 1.0; to: 0.0;  duration: 180; easing.type: Easing.InCubic }
         }
         ScriptAction {
             script: {
                 window.showMinimized();
-                window.y = window._minRestoreY;
+                bg.scale = 1.0;
+                bg.transformOrigin = Item.Center;   // reset origin for the maximize settle
                 window.opacity = 1;
             }
         }
     }
 
     function animateMinimize() {
-        window._minRestoreY = window.y;
-        minAnimY.to = window.y + 40;
         minimizeAnim.restart();
     }
 
@@ -397,6 +411,8 @@ ApplicationWindow {
         id: bg
         anchors.fill: parent
         color: Theme.bg
+        // Scale origin for the maximize/restore "settle" (maximizePop).
+        transformOrigin: Item.Center
         border.color: Theme.border
         border.width: window.isMaximized ? 0 : 1
 
@@ -619,6 +635,17 @@ ApplicationWindow {
             anchors.bottom: parent.bottom
             editorRef: noteEditor
         }
+
+        // Window outline — drawn ON TOP of every panel, since bg's own border is
+        // covered by the sidebar / right-panel / status-bar edges. Transparent fill
+        // (no MouseArea), so it never intercepts clicks.
+        Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            border.color: Theme.border
+            border.width: window.isMaximized ? 0 : 1
+            z: 1000
+        }
     }
 
     // Timer to clear the sidebar highlight after 1 second
@@ -631,6 +658,9 @@ ApplicationWindow {
 
     // Clears sidebarAnimating just after the 300ms open/close slide settles.
     Timer { id: sidebarAnimTimer; interval: 320; onTriggered: window.sidebarAnimating = false }
+
+    // Clears rightPanelAnimating just after the 300ms dock open/close slide settles.
+    Timer { id: rightPanelAnimTimer; interval: 320; onTriggered: window.rightPanelAnimating = false }
 
     // Focus the find field once the slide-down bar is in place.
     Timer { id: noteSearchFocusTimer; interval: 60; onTriggered: noteSearchBar.focusField() }

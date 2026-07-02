@@ -10,9 +10,21 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Svg Network)
 qt_policy(SET QTP0001 NEW)
 
+# Windows: embed the app icon (shown in Explorer, taskbar, shortcuts). windres
+# resolves "appicon.ico" relative to this .rc file, so both live in packaging/.
+if(WIN32)
+    set(APP_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/packaging/app_icon.rc")
+    # windres' preprocessor mangles -I include paths that contain spaces (this
+    # project lives under "CODING PROJECTS"). The icon RC needs no include dirs,
+    # so drop <INCLUDES> from the RC compile command entirely.
+    set(CMAKE_RC_COMPILE_OBJECT
+        "<CMAKE_RC_COMPILER> <DEFINES> <FLAGS> -O coff <SOURCE> <OBJECT>")
+endif()
+
 # ── C++ sources (all under src/) ────────────────────────────────────────────
 qt_add_executable(appHyperLinkNotes
     main.cpp
+    ${APP_ICON_RC}
 
     # Core — vault model + QML view-model
     src/core/VaultRepository.cpp
@@ -144,6 +156,7 @@ qt_add_qml_module(appHyperLinkNotes
         qml/scripts/editor/openLink.js
         qml/scripts/editor/frontmatter.js
         qml/scripts/editor/buildContext.js
+        qml/scripts/editor/branchNote.js
         # Scripts — navigation
         qml/scripts/navigation/pushHistory.js
         qml/scripts/navigation/goBack.js
@@ -166,12 +179,21 @@ target_link_libraries(appHyperLinkNotes
     PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Svg Qt6::Network
 )
 
+# Windows: in Release, build as a GUI-subsystem app so NO console window opens
+# beside the app (the "-mwindows" / WinMain path; Qt supplies the entry point).
+# Debug stays a console app so qDebug()/logging is visible while developing.
+set_target_properties(appHyperLinkNotes PROPERTIES
+    WIN32_EXECUTABLE $<CONFIG:Release>)
+
+# Scope include dirs to C++ only. The Windows RC compiler (windres) otherwise
+# inherits these -I paths and its preprocessor chokes on the space in the project
+# path ("CODING PROJECTS") — and it needs none of them to compile the icon.
 target_include_directories(appHyperLinkNotes PRIVATE
-    .
-    src/core
-    src/graph
-    src/physics
-    src/ai
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/core>
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/graph>
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/physics>
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/ai>
 )
 
 target_precompile_headers(appHyperLinkNotes PRIVATE

@@ -8,6 +8,12 @@ build-*/
 *.dll
 *.dylib
 
+# ── Packaging / distribution artifacts (attach these to GitHub Releases, ─────
+#    do NOT commit them into the repo) ────────────────────────────────────────
+dist/
+packaging/output/
+*.zip
+
 # ── Qt Creator / Qt Design Studio local config (machine-specific) ───────────
 *.user
 *.user.*

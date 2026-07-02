@@ -43,6 +43,43 @@ QString rewrite(const QString &content, const QString &oldTitle, const QString &
     return out;
 }
 
+// Repoints the `parent:` value in a note's leading YAML frontmatter when it
+// equals oldTitle. The branch trail (child's `parent` = its source note) is
+// title-based like [[links]], so a rename must rewrite it here too — otherwise
+// renaming an ancestor silently severs the AI-context chain for its descendants.
+QString rewriteParent(const QString &content, const QString &oldTitle, const QString &newTitle, bool &changed)
+{
+    // Leading ---\n … \n--- block only.
+    static const QRegularExpression fm(
+        QStringLiteral("\\A---[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n---[ \\t]*(?:\\r?\\n|\\z)"));
+    const QRegularExpressionMatch fmM = fm.match(content);
+    if (!fmM.hasMatch()) return content;
+
+    const QString block = fmM.captured(1);
+    // A `parent:` line, capturing the key+ws (2) and the value (3) separately.
+    static const QRegularExpression pk(
+        QStringLiteral("(^|\\n)([ \\t]*parent[ \\t]*:[ \\t]*)([^\\r\\n]*)"));
+    const QRegularExpressionMatch pm = pk.match(block);
+    if (!pm.hasMatch()) return content;
+
+    QString value = pm.captured(3).trimmed();
+    // Strip a single pair of wrapping quotes before comparing.
+    if (value.size() >= 2
+        && ((value.startsWith(QLatin1Char('"')) && value.endsWith(QLatin1Char('"')))
+         || (value.startsWith(QLatin1Char('\'')) && value.endsWith(QLatin1Char('\'')))))
+        value = value.mid(1, value.size() - 2);
+    if (value != oldTitle) return content;
+
+    const QString newBlock = block.left(pm.capturedStart())
+        + pm.captured(1) + pm.captured(2) + newTitle
+        + block.mid(pm.capturedEnd());
+
+    QString out = content;
+    out.replace(fmM.capturedStart(1), fmM.capturedLength(1), newBlock);
+    changed = true;
+    return out;
+}
+
 } // namespace
 
 QStringList updateLinkTargets(const QString &vaultPath, const QString &oldTitle, const QString &newTitle)
@@ -63,7 +100,8 @@ QStringList updateLinkTargets(const QString &vaultPath, const QString &oldTitle,
         in.close();
 
         bool changed = false;
-        const QString updated = rewrite(content, oldTitle, newTitle, changed);
+        QString updated = rewrite(content, oldTitle, newTitle, changed);
+        updated = rewriteParent(updated, oldTitle, newTitle, changed);
         if (!changed) continue;
 
         QFile out(path);

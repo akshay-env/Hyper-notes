@@ -111,7 +111,8 @@ void LlmService::ask(const QString &prompt, const QString &context)
 
     const QString userContent = context.trimmed().isEmpty()
         ? prompt
-        : (QStringLiteral("Context:\n") + context + QStringLiteral("\n\n---\n\n") + prompt);
+        : (QStringLiteral("Here is the relevant content from my notebook:\n\n") + context
+           + QStringLiteral("\n\n---\n\nQuestion: ") + prompt);
 
     QNetworkRequest req;
     QJsonObject body;
@@ -125,7 +126,25 @@ void LlmService::ask(const QString &prompt, const QString &context)
         req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
 
         QJsonArray messages;
-        messages.append(QJsonObject{{"role", "user"}, {"content", userContent}});
+        if (context.trimmed().isEmpty()) {
+            messages.append(QJsonObject{{"role", "user"}, {"content", prompt}});
+        } else {
+            // Split the message so the (large, stable) notebook context is its own
+            // cached block: a cache_control breakpoint means the whole prefix
+            // (system + this context) is reused across successive questions on the
+            // same note instead of being re-charged/re-processed every time. The
+            // question rides in a separate, uncached block after it. Below the
+            // model's cache minimum this is simply ignored — no error, no cache.
+            QJsonObject ctxBlock{
+                {"type", "text"},
+                {"text", QStringLiteral("Here is the relevant content from my notebook:\n\n") + context}
+            };
+            ctxBlock.insert("cache_control", QJsonObject{{"type", "ephemeral"}});
+            QJsonArray content;
+            content.append(ctxBlock);
+            content.append(QJsonObject{{"type", "text"}, {"text", QStringLiteral("Question: ") + prompt}});
+            messages.append(QJsonObject{{"role", "user"}, {"content", content}});
+        }
         body.insert("model", m_model);
         body.insert("system", m_systemPrompt);
         body.insert("messages", messages);

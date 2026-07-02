@@ -7,6 +7,7 @@ import "../../scripts/tree/refreshTree.js" as RefreshTree
 import "../../scripts/editor/frontmatter.js" as FM
 import "../../scripts/editor/buildContext.js" as BuildContext
 import "../../scripts/editor/openLink.js" as OpenLink
+import "../../scripts/editor/branchNote.js" as BranchNote
 import "../../scripts/file/openFileByPath.js" as OpenFile
 
 ColumnLayout {
@@ -43,8 +44,20 @@ ColumnLayout {
     property var llmService: null
     property string askError: ""
     property bool askExpanded: false   // collapsed → only the Ask button shows
+    property string contextHint: ""    // "Context: this note + N ancestors …"
     property string _typeQueue: ""     // buffered streamed text not yet "typed" in
     property bool _streamDone: false   // network stream ended; drain the queue then finish
+
+    // When the Ask bar opens, show what the model will actually receive — the
+    // reach of the branch trail + linked notes — so the context isn't a black box.
+    onAskExpandedChanged: {
+        if (!askExpanded) return;
+        var parsed = FM.parse(cmEditor.text);
+        var currentTitle = (window.activeNote && window.activeNote.name)
+                           ? window.activeNote.name.replace(/\.md$/i, "") : "Current note";
+        contextHint = BuildContext.describeContext(window, window.vaultFsRef,
+                                                   currentTitle, parsed.body, parsed.parent);
+    }
 
     function submitAsk() {
         if (!llmService || llmService.busy) return;
@@ -52,14 +65,15 @@ ColumnLayout {
         if (q === "") return;
         root.askError = "";
 
-        // Context = this note's ancestor chain (read from files, capped) + its
-        // own live body. The parent is read from this note's frontmatter.
+        // Context = the whole notebook as the model needs to see it: this note's
+        // live body, the notes it [[links]] to, its branch-ancestor chain (the
+        // `parent` in this note's frontmatter), and every note title in the
+        // vault. Assembled + capped in buildContext.js.
         var parsed = FM.parse(cmEditor.text);
         var currentTitle = (window.activeNote && window.activeNote.name)
                            ? window.activeNote.name.replace(/\.md$/i, "") : "Current note";
-        var ctx = BuildContext.buildFromTitle(window, window.vaultFsRef, parsed.parent, 12000);
-        if (parsed.body.trim().length > 0)
-            ctx += (ctx ? "\n\n" : "") + "## " + currentTitle + "\n" + parsed.body.trim();
+        var ctx = BuildContext.buildNotebookContext(window, window.vaultFsRef,
+                                                    currentTitle, parsed.body, parsed.parent);
 
         // Append the question at the end; the answer streams in right after it.
         // (We append at the document end rather than at the cursor position.)
@@ -123,11 +137,14 @@ ColumnLayout {
     Timer { id: askErrorTimer; interval: 6000; onTriggered: root.askError = "" }
     Timer { id: askFocusTimer; interval: 230; onTriggered: askField.forceActiveFocus() }
 
-    // Seed the pinned title field on load / note switch.
+    // The title rides as the editor's scrolling header (cmEditor.headerComponent);
+    // seed it through the live header instance (built lazily, so this is guarded).
     function applyTitleState(name, path) {
-        titleField.text = name;
-        titleField.editingPath = path;
-        titleField.editingOriginalName = name;
+        var t = cmEditor.headerItem ? cmEditor.headerItem.titleField : null;
+        if (!t) return;
+        t.text = name;
+        t.editingPath = path;
+        t.editingOriginalName = name;
     }
 
     // Sync editor text fields when activeNote changes
@@ -162,35 +179,6 @@ ColumnLayout {
         }
     }
 
-    // Pinned note title — stays at the top of the editor instead of riding as the
-    // scrolling ListView header (which slid away and looked "cut out" on scroll).
-    // The body (cmEditor) scrolls beneath it; applyTitleState() seeds it.
-    NoteTitle {
-        id: titleField
-        Layout.fillWidth: true
-        vaultFs: window.vaultFsRef
-
-        onRenameRequested: (oldPath, newName) => {
-            let newPath = vaultFs.renameFile(oldPath, newName);
-            if (newPath !== "") {
-                if (window.activeNote && window.activeNote.path === oldPath) {
-                    window.activeNote.path = newPath;
-                    window.activeNote.name = newName + (newName.endsWith(".md") || newName.endsWith(".txt") ? "" : ".md");
-                    root.currentLoadedPath = newPath; // Prevent file reload on refresh
-                    titleField.editingPath = newPath;
-                    titleField.editingOriginalName = newName;
-                    // Keep the open tab pointing at the renamed file
-                    window.updateActiveTabLabel(newPath, newName);
-                }
-                RefreshTree.refreshTree(window, window.vaultFsRef);
-            } else {
-                titleField.text = titleField.editingOriginalName;
-            }
-        }
-
-        onTitleAccepted: cmEditor.focusEditor()
-    }
-
     // Native live-preview editor. Exposes text / edited / linkClicked /
     // appendText / focusEditor.
     LivePreviewEditor {
@@ -198,16 +186,69 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
 
-        // Freeze text re-wrap during the sidebar open/close animation AND the
-        // window maximize/restore animation, so those slides stay smooth; a manual
-        // resize drag (both flags false) keeps reflowing live and instant.
-        freezeWidth: window.sidebarAnimating || window.maximizing
+        // Freeze text re-wrap during the sidebar open/close animation AND the right
+        // dock (Graph + Outline) open/close animation, so those slides stay smooth;
+        // a manual resize drag (both flags false) keeps reflowing live and instant.
+        // (Maximize/restore now snaps geometry instantly — a single reflow, nothing
+        // to freeze.)
+        freezeWidth: window.sidebarAnimating || window.rightPanelAnimating
+
+        // The note title rides as the editor's scrolling header, so title + body
+        // scroll as one piece. Rebuilt on document reload; Component.onCompleted
+        // re-seeds from activeNote, applyTitleState() updates on note switches.
+        headerComponent: Component {
+            Item {
+                width: cmEditor.width
+                implicitHeight: hdrTitle.implicitHeight + 16   // breathing room below the title
+                property alias titleField: hdrTitle
+
+                NoteTitle {
+                    id: hdrTitle
+                    width: parent.width
+                    vaultFs: window.vaultFsRef
+
+                    Component.onCompleted: {
+                        if (window.activeNote) {
+                            var n = window.activeNote.name.replace(/\.md$/i, "");
+                            text = n;
+                            editingOriginalName = n;
+                            editingPath = window.activeNote.path;
+                        }
+                    }
+
+                    onRenameRequested: (oldPath, newName) => {
+                        let newPath = vaultFs.renameFile(oldPath, newName);
+                        if (newPath !== "") {
+                            if (window.activeNote && window.activeNote.path === oldPath) {
+                                window.activeNote.path = newPath;
+                                window.activeNote.name = newName + (newName.endsWith(".md") || newName.endsWith(".txt") ? "" : ".md");
+                                root.currentLoadedPath = newPath; // Prevent file reload on refresh
+                                hdrTitle.editingPath = newPath;
+                                hdrTitle.editingOriginalName = newName;
+                                // Keep the open tab pointing at the renamed file
+                                window.updateActiveTabLabel(newPath, newName);
+                            }
+                            RefreshTree.refreshTree(window, window.vaultFsRef);
+                        } else {
+                            hdrTitle.text = hdrTitle.editingOriginalName;
+                        }
+                    }
+
+                    onTitleAccepted: cmEditor.focusEditor()
+                }
+            }
+        }
 
         // Debounced save: edits (typed or AI-streamed) restart the timer; it
         // persists the live text once things go quiet.
         onEdited: (text) => saveTimer.restart()
         onLinkClicked: (target) => OpenLink.openLink(window, window.vaultFsRef, target)
         onOpenAllRequested: (targets) => OpenLink.openAllInTabs(window, window.vaultFsRef, targets)
+
+        // Selection → child note (the notebook's core move: split a thought into
+        // its own linked note, keeping the `parent` trail back for AI context).
+        // Drops a [[link]] in place, then opens/refreshes via branchNote.js.
+        onBranchRequested: BranchNote.branchFromSelection(window, window.vaultFsRef, cmEditor)
 
         // "Create new note" from a multi-link menu: make a fresh note in this
         // note's folder, append it to the clicked link, save THIS note, then open
@@ -257,6 +298,19 @@ ColumnLayout {
             font.family: "Segoe UI"
             wrapMode: Text.WordWrap
             maximumLineCount: 2
+            elide: Text.ElideRight
+        }
+
+        // What the AI will receive (branch trail + linked notes). Shown only when
+        // the bar is open and there's no error competing for the same strip.
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignRight
+            visible: root.askExpanded && root.askError === "" && root.contextHint !== ""
+            text: root.contextHint
+            color: Theme.textFaint
+            font.pixelSize: 11
+            font.family: "Segoe UI"
             elide: Text.ElideRight
         }
 

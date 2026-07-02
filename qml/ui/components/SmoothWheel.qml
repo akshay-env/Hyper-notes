@@ -31,17 +31,20 @@ Item {
         onWheel: (event) => {
             if (!root.flick)
                 return;
-            // Floor the bound: with pixelAligned scrolling a fractional maxY can land
-            // a sub-pixel PAST the real bottom, and setting contentY out of bounds
-            // makes the Flickable fixup-snap back — that snap was the end glitch.
-            var maxY = Math.max(0, Math.floor(root.flick.contentHeight - root.flick.height));
-            if (maxY <= 0)
+            // Clamp to the flickable's REAL range [originY, originY+contentHeight-height].
+            // originY is negative when there's a ListView header (e.g. the note title),
+            // so hardcoding 0 as the minimum made the wheel jump PAST the header and
+            // never scroll back up to it. Floor the max so a fractional bound doesn't
+            // land a sub-pixel past the bottom (which fixup-snaps — the end glitch).
+            var minY = root.flick.originY;
+            var maxY = Math.floor(root.flick.originY + root.flick.contentHeight - root.flick.height);
+            if (maxY <= minY)
                 return;
             // Accumulate onto the in-flight target so fast successive notches add up
             // instead of each one restarting from a stale position.
             var base = glide.running ? root._target : root.flick.contentY;
             var dy = (event.angleDelta.y / 120) * root.step;
-            var next = Math.max(0, Math.min(maxY, base - dy));
+            var next = Math.max(minY, Math.min(maxY, base - dy));
             // Already gliding to this exact bound (you're holding the wheel at the
             // top/bottom) — don't restart a zero-distance animation each notch; that
             // churn was the stutter/glitch at the end.
