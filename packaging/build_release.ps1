@@ -43,7 +43,7 @@ if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
 
 Write-Host "==> Zipping portable build..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-$Zip = "$OutDir\HyperLinkNotes-0.1.0-win64-portable.zip"
+$Zip = "$OutDir\HyperLinkNotes-1.0.0-win64-portable.zip"
 if (Test-Path $Zip) { Remove-Item -Force $Zip }
 Compress-Archive -Path "$Dist\*" -DestinationPath $Zip
 

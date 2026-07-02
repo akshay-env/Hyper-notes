@@ -17,7 +17,7 @@
 ; ─────────────────────────────────────────────────────────────────────────────
 
 #define AppName "HyperLinkNotes"
-#define AppVersion "0.1.0"
+#define AppVersion "1.0.0"
 #define AppPublisher "HyperLinkNotes"
 #define AppExe "HyperLinkNotes.exe"
 
@@ -33,7 +33,7 @@ DisableProgramGroupPage=yes
 ; Per-user install — no administrator prompt, exactly like Obsidian.
 PrivilegesRequired=lowest
 OutputDir=output
-OutputBaseFilename={#AppName}-Setup
+OutputBaseFilename={#AppName}-{#AppVersion}-Setup
 SetupIconFile=appicon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2
