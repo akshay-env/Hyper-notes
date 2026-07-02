@@ -1,6 +1,7 @@
 # Third-party notices
 
-HyperLinkNotes' own source code is licensed under the MIT License (see `LICENSE`).
+HyperLinkNotes' own source code is licensed under the Apache License 2.0
+(see `LICENSE`).
 
 This application is built with and distributes the **Qt framework**
 (https://www.qt.io), used under the **GNU Lesser General Public License v3
