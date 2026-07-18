@@ -1,0 +1,34 @@
+[package]
+name = "hyperlink-notes"
+version = "0.1.0"
+description = "HyperLinkNotes — a link-first markdown notebook"
+authors = ["Akshay"]
+edition = "2021"
+
+[lib]
+# `_lib` suffix keeps the lib name distinct from the bin on Windows.
+name = "hyperlink_notes_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# rustls rather than native-tls: no OpenSSL in the Windows build chain.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+bytes = "1"
+# API keys live in the OS credential store, never in the webview. Default features
+# cover Windows Credential Manager + the Linux secret-service backend.
+keyring = "4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "4", features = ["apple-native-keyring-store"] }
+
+[dev-dependencies]
+# Drives the async probe tests against a local mock provider.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

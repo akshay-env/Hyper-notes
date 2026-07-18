@@ -2,146 +2,103 @@
 
 **A local-first, networked note-taking app for Windows — a live force-directed
 graph of your notes, an Obsidian-style live-preview Markdown editor, and an AI
-assistant that actually understands your notebook.**
+assistant that understands your notebook.**
 
-Built from scratch in native **C++ / Qt 6 / QML** — no Electron, no web view.
+Version 2 is a ground-up rebuild on **Rust + Tauri + SolidJS**, with the graph
+physics compiled to **WebAssembly**. Version 1 was native C++/Qt 6 — it lives on
+the [`qt-legacy`](../../tree/qt-legacy) branch and under the `v1.0.0` tag.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Built with Qt](https://img.shields.io/badge/Qt-6.11-41cd52.svg?logo=qt&logoColor=white)](https://www.qt.io)
-[![Language](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](#)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078d6.svg?logo=windows&logoColor=white)](#)
-
----
-
-## Screenshots
-
-<p align="center">
-  <img src="docs/screenshots/app.png" width="90%" alt="HyperLinkNotes — live-preview editor, graph, outline, and the notebook-aware AI bar"><br>
-  <em>The live-preview editor, a graph of your notes, an outline, and the notebook-aware AI bar — the context line reads
-  "this note + 2 ancestors + 8 linked notes".</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/graph.png"  width="49%" alt="Force-directed graph of the whole vault">
-  &nbsp;
-  <img src="docs/screenshots/editor.png" width="49%" alt="Live-preview Markdown editor with wikilinks">
-</p>
+[![Built with Tauri](https://img.shields.io/badge/Tauri-2-24C8DB.svg?logo=tauri&logoColor=white)](https://tauri.app)
+[![SolidJS](https://img.shields.io/badge/SolidJS-1.9-2c4f7c.svg?logo=solid&logoColor=white)](https://solidjs.com)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078d6.svg?logo=windows&logoColor=white)](#install)
 
 ---
 
 ## What it does
 
-HyperLinkNotes stores everything as plain Markdown files in a folder you choose
-(your "vault") — nothing is locked in a proprietary format, and it all works
-offline. Notes link to each other with `[[wikilinks]]`, and those links power a
-live graph you can explore.
+**Links are the point.** Write `[[Another note]]` and the link resolves as you
+type; hover it to preview the target, click to open it, click an unresolved one
+to create it. A link can carry several targets — `[[Design|Research]]` opens a
+menu rather than a single note.
 
-### ✍️ Writing
-- **Live-preview Markdown editor** — the line your cursor is on shows raw
-  Markdown; every other line renders clean, Obsidian-style. No mode toggle.
-- **`[[wikilinks]]`** to connect notes, and **multi-target links**
-  `[[label|NoteA|NoteB]]` — one highlighted phrase pointing at several notes,
-  with a hover preview card.
-- **Branching** — highlight any text and split it into its own child note that
-  remembers where it came from. This trail is what the AI follows (below).
-- In-note search, an outline panel, and per-line virtualization so large notes
-  stay smooth.
+**The graph is a real view, not a decoration.** Every note is a node, every
+wikilink an edge, laid out by a force simulation that runs in WebAssembly on a
+worker thread so the UI never stutters. It opens as its own tab, and a live
+mini-graph sits in the side panel while you write.
 
-### 🕸️ The graph
-- A **real-time, force-directed physics graph** of your whole vault —
-  Barnes-Hut repulsion, spring links, and collision, simulated on a background
-  thread at a fixed 60 Hz so the UI never stalls.
-- Backlinks, neighbour highlighting, and a per-note mini-graph.
+**The editor renders as you write.** Headings, tasks, callouts, tables, math,
+tags and images preview inline; the raw Markdown is still there when your cursor
+enters the line. Three modes — live preview, source, and reading.
 
-### 🤖 Notebook-aware AI
-An **Ask-AI bar** answers questions about the note you're in — but the
-interesting part is *what it knows*. Instead of blindly sending one note, it
-assembles context from:
-- the current note,
-- every note it `[[links]]` to,
-- the **entire branch chain it came from** (note Z still carries context from
-  note A, without you re-explaining), and
-- a map of every note title in the vault.
+**AI that reads your notebook.** Ask a question and the answer streams into the
+note, using the current note plus its ancestors and linked neighbours as context.
+Bring your own key: Anthropic, Gemini, OpenAI, or any OpenAI-compatible endpoint.
 
-Distant ancestors are compressed to summaries so the context stays rich but
-cheap even on deep chains, and stable context is cached between questions.
-Provider-agnostic — bring your own key for **Anthropic, OpenAI, Google Gemini,
-or any OpenAI-compatible endpoint**.
+**Your notes stay yours.** A vault is a plain folder of `.md` files on your disk.
+No account, no sync service, no telemetry.
 
-### 🎨 The app
-- Local-first: your notes are just `.md` files on disk.
-- Tabs, a file-tree sidebar, and a recycle bin.
-- **8 built-in themes** (High Contrast, Light, Mist, Midnight Indigo, Emerald
-  Noir, Crimson Ember, Cyber Teal, Sapphire).
-- A custom frameless window with native-feeling caption controls.
+## Design
 
----
+The interface aims to feel like a native desktop app rather than a web page in a
+window: one accent used sparingly, type and shape carrying the identity instead
+of colour, and motion that settles firmly with no overshoot. Every colour resolves
+through a token system, and a contrast test asserts that **no token can become
+invisible on any of the 220,943 background/accent combinations** the Appearance
+editor can produce.
 
-## Download & install
+Appearance is fully themeable — mode, accent, background, font, and per-element
+colour overrides for buttons, tags, links and headings, saveable as named themes.
 
-Grab the latest build from the [**Releases**](https://github.com/akshay-env/Hyper-notes/releases) page:
+## Install
 
-| Download | For |
-|---|---|
-| **`HyperLinkNotes-Setup.exe`** | Normal install — Start-Menu + desktop shortcut, uninstaller. No admin needed. |
-| **`HyperLinkNotes-…-portable.zip`** | No install — unzip anywhere and run `HyperLinkNotes.exe`. |
+Grab the latest Windows x64 installer from the
+[Releases page](../../releases/latest).
 
-> **Note:** the app is not code-signed, so Windows SmartScreen may show a
-> *"Windows protected your PC"* prompt on first run — click **More info →
-> Run anyway**. This is expected for indie apps.
-
-**AI is optional and bring-your-own-key.** The app works fully without it; to
-enable the assistant, open Settings and paste an API key for your provider.
-Keys are stored locally on your machine and never leave it except to call your
-chosen provider.
-
----
+> The app renders through the Microsoft Edge **WebView2** runtime, which is
+> preinstalled on Windows 11 and current Windows 10. The installer fetches it if
+> it's missing.
 
 ## Build from source
 
-Requires **Qt 6.11** (MinGW 64-bit) and CMake.
+Requires [Node.js](https://nodejs.org) 18+, the
+[Rust toolchain](https://rustup.rs), and the Tauri
+[Windows prerequisites](https://tauri.app/start/prerequisites/) (MSVC build tools
+and the WebView2 SDK).
 
 ```bash
-# Configure a release build
-cmake -S . -B build/release -G "MinGW Makefiles" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="<path-to>/Qt/6.11.1/mingw_64"
-
-# Build
-cmake --build build/release -j
+npm install
+npm run tauri dev      # run the desktop app in development
+npm run tauri build    # produce the Windows installers
 ```
 
-Or open `CMakeLists.txt` in **Qt Creator** and build with the MinGW kit.
+Other useful scripts:
 
-To produce a distributable (bundled DLLs + portable ZIP), run
-[`packaging/build_release.ps1`](packaging/README.md); to build the installer,
-compile `packaging/installer.iss` with [Inno Setup](https://jrsoftware.org/isdl.php).
-
----
-
-## Tech stack
-
-- **C++17** application core — vault file operations, the graph physics
-  simulation (on a `QThread` worker), and a provider-agnostic LLM client
-  (`QNetworkAccessManager`, SSE streaming).
-- **Qt 6 / QML** UI — a virtualized live-preview editor, a scene-graph edge
-  renderer for the graph, and a theming singleton.
-- **No web technologies** — the whole thing is compiled native; QML is baked
-  into the binary at build time.
-
-```
-HyperLinkNotes/
-├── src/            # C++: vault, physics, graph geometry, AI client
-├── qml/            # QML UI + JS logic (editor, graph, sidebar, scripts)
-├── packaging/      # Windows packaging (icon, installer, deploy script)
-└── CMakeLists.txt
+```bash
+npm run dev            # frontend only, in a browser at :1420
+npm test               # graph physics + theme contrast suites
+npm run asbuild        # recompile the AssemblyScript physics kernel to wasm
 ```
 
----
+## Project layout
 
-## License
+```
+src/                 SolidJS frontend
+  components/        App chrome — sidebar, tabs, panels, dialogs, settings
+  editor/            CodeMirror 6 setup, live preview, wikilinks, callouts
+  graph/             Graph data, physics (JS + wasm), Pixi renderer
+  theme/             Design tokens, colour engine, motion vocabulary
+  ai/                Prompt context assembly and answer streaming
+  state/             Signals — vault, tabs, UI, theme, settings
+src-tauri/           Rust backend — vault filesystem, LLM calls, keychain
+assembly/            AssemblyScript source for the physics kernel
+```
 
-HyperLinkNotes is released under the **Apache License 2.0** — see [`LICENSE`](LICENSE).
+API keys are held in the OS credential store and are **write-only** to the
+frontend: the app can save a key but can never read it back, and all model calls
+are made from Rust.
 
-It is built with the **Qt framework**, used under the LGPLv3 and shipped as
-dynamically-linked libraries — see [`NOTICE.md`](NOTICE.md) for attribution.
+## Licence
+
+Apache 2.0 — see [LICENSE](LICENSE). Third-party components are listed in
+[NOTICE.md](NOTICE.md).

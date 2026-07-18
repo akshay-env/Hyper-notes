@@ -1,0 +1,318 @@
+/* Design tokens ported 1:1 from the Qt app's Theme.qml (_all map of 8 palettes).
+   :root = "highContrast" (Golden Slate) — the no-JS default. The other 7 palettes
+   are [data-theme="…"] override blocks; state/theme.ts sets/removes the attribute
+   on <html> (highContrast removes it, falling back to :root). Qt.rgba(r,g,b,a)
+   values are converted to rgba(255·r,…). Font + motion vars are palette-independent
+   and live only in :root. */
+:root {
+  /* Surfaces */
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface2: #141414;
+  --elevated: #1f1f1f;
+  --overlay-hover: rgba(255, 255, 255, 0.08);
+
+  /* Borders / dividers */
+  --border: #3a3a3a;
+  --divider: #262626;
+
+  /* Text */
+  --text: #ffffff;
+  --text-dim: #c8c8c8;
+  --text-muted: #909090;
+  --text-faint: #5a5a5a;
+
+  /* Accent */
+  --accent: #ffe000;
+  --accent-hover: #fff04d;
+  --accent-text: #ffe000;
+  --on-accent: #000000;
+  --accent-soft: rgba(255, 224, 0, 0.20);
+  --accent-soft-hi: rgba(255, 224, 0, 0.32);
+
+  /* Status */
+  --danger: #ff3b3b;
+  --danger-hover: #ff5c5c;
+  --danger-soft: rgba(255, 59, 59, 0.16);
+  --highlight: #ffe000;
+
+  /* Graph */
+  --graph-bg: #000000;
+  --node: #b0b0b0;
+  --node-neighbor: #ffffff;
+  --node-active: #ffe000;
+  --node-hi: #ffffff;
+  /* Graph node TITLES — text on the graph field, so it carries the body-text
+     contrast floor rather than the (lower) dot floor. */
+  --node-label: #d0d0d0;
+
+  /* Legacy motion aliases — the app's motion vocabulary now lives in motion.css
+     (--dur-1/2/3 + --ease-*). These map the old names onto it so any stray
+     reference resolves to the same scale; prefer the motion.css tokens directly. */
+  --anim-fast: var(--dur-1);
+  --anim-med: var(--dur-2);
+
+  /* Typography — the Qt app uses system Segoe UI throughout */
+  --font: "Segoe UI", system-ui, "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  /* Layout — palette-independent. One gutter for BOTH docks so their columns line
+     up (the right panel used to carry a stray 13px). One footer height so the two
+     dock footers land on the same baseline. One hit target so every icon button in
+     the chrome is the same size. */
+  --gutter: 12px;
+  --footer-h: 46px;
+  --hit: 30px;
+
+  /* Elevation — no-JS fallback only. :root is the dark default, so these carry the
+     dark values; the light presets override them below. In the running app
+     state/theme.ts writes derived shadow-* inline on <html> (colorEngine derives
+     them from the background's luminance), which supersedes everything here. */
+  --shadow-hair: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-lift: 0 2px 10px rgba(0, 0, 0, 0.42);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.52);
+
+  /* ── Editorial layer ────────────────────────────────────────────────────────
+     Deliberately palette-INDEPENDENT: geometry, type and rhythm only, no colour.
+     That's what lets the editorial look survive every theme the Appearance editor
+     can produce — the look is carried by shape and type, the palette by tokens. */
+
+  /* Radii. Crisp, not soft: inputs/chips 4, buttons/rows 6, cards 8, big surfaces
+     12, and nothing above 12 except a true pill. The sheet previously used
+     4/5/6/7/8/9/10/12 — eight values doing the work of four. */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  /* Tags and status badges ONLY. Never a container, card, or primary button. */
+  --r-pill: 9999px;
+
+  /* Display face — editorial serif for headings and hero-scale type. This is the
+     DEFAULT only: choosing a font in Settings → Appearance overwrites --font-display
+     alongside --font (state/theme.ts), because that picker promises to apply
+     "across the app and your notes" and headings are part of the app. Leave the
+     font untouched and you keep the serif. */
+  --font-display: "Instrument Serif", "Newsreader", "Lyon Text", "Playfair Display",
+    Georgia, serif;
+
+  /* Tracking. Display type sets tight; the small uppercase labels set wide. */
+  --track-display: -0.025em;
+  --track-tight: -0.01em;
+  --track-wide: 0.05em;
+
+  /* Line heights. --lh-body is for PROSE (notes, hints, descriptions) — it is not
+     applied globally, because the chrome is a dense 13px desktop UI whose rows are
+     sized in px and would blow apart at 1.6. */
+  --lh-display: 1.1;
+  --lh-body: 1.6;
+}
+
+[data-theme="light"] {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface2: #efece4;
+  --elevated: #e6e2d8;
+  --overlay-hover: rgba(0, 0, 0, 0.05);
+  --border: #e3dfd5;
+  --divider: #ece8de;
+  --text: #20242e;
+  --text-dim: #5a606c;
+  --text-muted: #888e98;
+  --text-faint: #b6bac2;
+  --accent: #d99a16;
+  --accent-hover: #c2870c;
+  --accent-text: #8a5e00;
+  --on-accent: #2a1d00;
+  --accent-soft: rgba(217, 154, 22, 0.16);
+  --accent-soft-hi: rgba(217, 154, 22, 0.26);
+  --danger: #d3384a;
+  --danger-hover: #bb2a3b;
+  --danger-soft: rgba(211, 56, 74, 0.10);
+  --highlight: #d99a16;
+  --graph-bg: #f1efe8;
+  --node: #a0a6b0;
+  --node-neighbor: #5a606c;
+  --node-active: #d99a16;
+  --node-hi: #20242e;
+  /* On paper, elevation is barely-there — the 1px border does the separating. */
+  --shadow-hair: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-lift: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="mist"] {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface2: #eaeef3;
+  --elevated: #dfe5ed;
+  --overlay-hover: rgba(0, 0, 0, 0.05);
+  --border: #dde3eb;
+  --divider: #e8ecf2;
+  --text: #1c2430;
+  --text-dim: #586272;
+  --text-muted: #8b94a3;
+  --text-faint: #b6bdc8;
+  --accent: #4f6ef0;
+  --accent-hover: #3d5ce0;
+  --accent-text: #2a3f9e;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(79, 110, 240, 0.14);
+  --accent-soft-hi: rgba(79, 110, 240, 0.24);
+  --danger: #e0384a;
+  --danger-hover: #c52a3b;
+  --danger-soft: rgba(224, 56, 74, 0.10);
+  --highlight: #4f6ef0;
+  --graph-bg: #eef1f6;
+  --node: #9aa3b2;
+  --node-neighbor: #586272;
+  --node-active: #4f6ef0;
+  --node-hi: #1c2430;
+  --shadow-hair: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-lift: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="midnightIndigo"] {
+  --bg: #0a0c18;
+  --surface: #111530;
+  --surface2: #161b3d;
+  --elevated: #1f2550;
+  --overlay-hover: rgba(255, 255, 255, 0.05);
+  --border: #262d52;
+  --divider: #1a2040;
+  --text: #e7e9f5;
+  --text-dim: #9aa0c4;
+  --text-muted: #6a7099;
+  --text-faint: #454b73;
+  --accent: #8b7df6;
+  --accent-hover: #9d90f8;
+  --accent-text: #c7bdff;
+  --on-accent: #0a0c18;
+  --accent-soft: rgba(139, 125, 246, 0.18);
+  --accent-soft-hi: rgba(139, 125, 246, 0.30);
+  --danger: #ef5f6b;
+  --danger-hover: #ff7280;
+  --danger-soft: rgba(240, 94, 107, 0.13);
+  --highlight: #a892ff;
+  --graph-bg: #0a0c18;
+  --node: #9aa0c4;
+  --node-neighbor: #d2d6f0;
+  --node-active: #a892ff;
+  --node-hi: #ffffff;
+}
+
+[data-theme="emeraldNoir"] {
+  --bg: #07120e;
+  --surface: #0c1a14;
+  --surface2: #11241b;
+  --elevated: #163026;
+  --overlay-hover: rgba(255, 255, 255, 0.05);
+  --border: #1d3b2e;
+  --divider: #14271f;
+  --text: #e6f0ea;
+  --text-dim: #93b3a4;
+  --text-muted: #5f7d6f;
+  --text-faint: #3c5248;
+  --accent: #34d399;
+  --accent-hover: #4ee0a8;
+  --accent-text: #9af0cf;
+  --on-accent: #07120e;
+  --accent-soft: rgba(52, 211, 153, 0.16);
+  --accent-soft-hi: rgba(52, 211, 153, 0.28);
+  --danger: #ef5f6b;
+  --danger-hover: #ff7280;
+  --danger-soft: rgba(240, 94, 107, 0.13);
+  --highlight: #34d399;
+  --graph-bg: #07120e;
+  --node: #93b3a4;
+  --node-neighbor: #cfe6da;
+  --node-active: #34d399;
+  --node-hi: #ffffff;
+}
+
+[data-theme="crimsonEmber"] {
+  --bg: #12100f;
+  --surface: #1b1715;
+  --surface2: #221d1a;
+  --elevated: #2e2722;
+  --overlay-hover: rgba(255, 255, 255, 0.05);
+  --border: #352c27;
+  --divider: #241e1b;
+  --text: #f2ebe7;
+  --text-dim: #b3a59d;
+  --text-muted: #7d6f67;
+  --text-faint: #524841;
+  --accent: #f0584b;
+  --accent-hover: #ff6e62;
+  --accent-text: #ffb3aa;
+  --on-accent: #1b0c0a;
+  --accent-soft: rgba(240, 88, 75, 0.16);
+  --accent-soft-hi: rgba(240, 88, 75, 0.28);
+  --danger: #d83a4a;
+  --danger-hover: #ec4d5d;
+  --danger-soft: rgba(216, 58, 74, 0.13);
+  --highlight: #f0584b;
+  --graph-bg: #12100f;
+  --node: #b3a59d;
+  --node-neighbor: #e6dcd5;
+  --node-active: #f0584b;
+  --node-hi: #ffffff;
+}
+
+[data-theme="cyberTeal"] {
+  --bg: #06121a;
+  --surface: #0a1b26;
+  --surface2: #0f2430;
+  --elevated: #163443;
+  --overlay-hover: rgba(255, 255, 255, 0.05);
+  --border: #1c3d4d;
+  --divider: #102733;
+  --text: #e2f1f5;
+  --text-dim: #8fb3bf;
+  --text-muted: #5d7e8a;
+  --text-faint: #3a525c;
+  --accent: #22d3ee;
+  --accent-hover: #4fdef5;
+  --accent-text: #a5edf7;
+  --on-accent: #04161c;
+  --accent-soft: rgba(34, 211, 238, 0.16);
+  --accent-soft-hi: rgba(34, 211, 238, 0.28);
+  --danger: #ef5f6b;
+  --danger-hover: #ff7280;
+  --danger-soft: rgba(240, 94, 107, 0.13);
+  --highlight: #22d3ee;
+  --graph-bg: #06121a;
+  --node: #8fb3bf;
+  --node-neighbor: #cbe8ef;
+  --node-active: #22d3ee;
+  --node-hi: #ffffff;
+}
+
+[data-theme="sapphire"] {
+  --bg: #0e1014;
+  --surface: #161922;
+  --surface2: #1c2029;
+  --elevated: #262b36;
+  --overlay-hover: rgba(255, 255, 255, 0.05);
+  --border: #2b313d;
+  --divider: #1b1f28;
+  --text: #e8ebf0;
+  --text-dim: #98a1b3;
+  --text-muted: #646d80;
+  --text-faint: #424a59;
+  --accent: #3b82f6;
+  --accent-hover: #5b97f8;
+  --accent-text: #a9c8fc;
+  --on-accent: #061021;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --accent-soft-hi: rgba(59, 130, 246, 0.28);
+  --danger: #ef5f6b;
+  --danger-hover: #ff7280;
+  --danger-soft: rgba(240, 94, 107, 0.13);
+  --highlight: #3b82f6;
+  --graph-bg: #0e1014;
+  --node: #98a1b3;
+  --node-neighbor: #d3d9e3;
+  --node-active: #3b82f6;
+  --node-hi: #ffffff;
+}

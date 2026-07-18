@@ -1,0 +1,48 @@
+{
+  "name": "hyperlink-notes",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test:graph": "tsx src/graph/__tests__/graphData.test.mts && tsx src/graph/__tests__/physics.test.mts && tsx src/graph/__tests__/physicsWasm.test.mts",
+    "test:theme": "tsx src/theme/__tests__/contrast.test.mts",
+    "test": "npm run test:graph && npm run test:theme",
+    "asbuild": "asc assembly/physics.ts --target release && node scripts/embed-wasm.cjs"
+  },
+  "dependencies": {
+    "@ark-ui/solid": "^5.37.1",
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.5",
+    "@lezer/markdown": "^1.7.1",
+    "@pixi/canvas-renderer": "^7.4.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@types/katex": "^0.16.8",
+    "codemirror": "^6.0.2",
+    "d3-force": "^3.0.0",
+    "katex": "^0.17.0",
+    "pixi.js": "^7.4.3",
+    "solid-js": "^1.9.3",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/d3-force": "^3.0.10",
+    "assemblyscript": "^0.28.19",
+    "tsx": "^4.23.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vite-plugin-solid": "^2.11.0",
+    "wabt": "^1.0.39"
+  }
+}

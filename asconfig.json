@@ -1,0 +1,17 @@
+{
+  "targets": {
+    "release": {
+      "outFile": "build/physics.wasm",
+      "textFile": "build/physics.wat",
+      "optimizeLevel": 3,
+      "shrinkLevel": 1,
+      "noAssert": true,
+      "sourceMap": false
+    }
+  },
+  "options": {
+    "runtime": "stub",
+    "exportMemory": true,
+    "bindings": false
+  }
+}

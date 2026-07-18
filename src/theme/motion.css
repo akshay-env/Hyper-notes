@@ -1,0 +1,293 @@
+/* Motion system — "solid, natural, native". The vocabulary is tuned like a
+   desktop OS, not a web page: everything settles fast on a firm decelerate
+   curve, exits get out of the way quicker than entries, and nothing overshoots
+   or bounces. Surfaces move a few pixels at most; opacity does the rest. A
+   press physically compresses the control a hair — firm, not springy.
+   Everything respects prefers-reduced-motion. */
+:root {
+  /* Easings. --ease-out is the workhorse: a hard initial move that lands
+     without a float or a bounce (the WinUI/Fluent decelerate). --ease-spring
+     keeps its name for compatibility but is now the same solid settle — the
+     old overshoot read as "web app". */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1); /* firm decelerate, no float */
+  --ease-spring: cubic-bezier(0.2, 0, 0, 1); /* legacy alias — solid settle */
+  --ease-in: cubic-bezier(0.3, 0, 1, 1); /* accelerate away (exits) */
+
+  /* Durations. Micro feedback is nearly instant; panels stay under a quarter
+     second so the app always feels ahead of the hand. */
+  --dur-1: 90ms; /* micro: hover / press */
+  --dur-2: 150ms; /* small: menus, list reveal, find bar */
+  --dur-3: 220ms; /* medium: panels / cards / dock slide */
+
+  /* Editorial entry — content blocks that mount as a GROUP (settings sections)
+     rise together with a short cascade. Quick enough to read as "the page is
+     ready", not a landing-page reveal. */
+  --ease-editorial: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-reveal: 320ms;
+  --stagger-step: 30ms;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes hln-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes hln-scrim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes hln-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes hln-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+/* Centered cards keep their translate(-50%,-50%); scale starts at 0.98 — a card
+   that grows from 95% reads as a web modal, 98% reads as a surface snapping
+   into place. */
+@keyframes hln-pop-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes hln-pop-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.99); }
+}
+/* Flex-centered cards (Ark UI dialogs sit inside a centering Positioner, so
+   unlike hln-pop-* these must NOT carry the -50%/-50% self-centering translate —
+   it would shove the card a half-size off-centre). */
+@keyframes hln-card-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes hln-card-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.99); }
+}
+/* Corner-anchored surfaces (menus, hover card): a short drop into place. */
+@keyframes hln-menu-in {
+  from { opacity: 0; transform: scale(0.98) translateY(-3px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes hln-menu-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.99); }
+}
+@keyframes hln-rise-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes hln-tree-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Freshly typed AI answer text — a plain opacity fade (no transform, so inline text
+   never reflows as it settles). */
+@keyframes hln-ai-type {
+  from { opacity: 0.15; }
+  to { opacity: 1; }
+}
+/* Blinking caret for the typing-speed preview. */
+@keyframes hln-caret-blink {
+  50% { opacity: 0; }
+}
+/* Editorial reveal: a short rise + fade. transform/opacity only, so it never
+   triggers layout while a group cascades in. */
+@keyframes hln-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Staggered group entry ───────────────────────────────────────────────────
+   Put .hln-stagger on a container and its direct children cascade in. Delays are
+   driven off nth-child so nothing has to thread an index through the markup, and
+   they FLATTEN past the 8th child — an unbounded cascade leaves the tail of a long
+   list waiting to appear, which reads as jank, not polish.
+
+   .set-sections is listed alongside it rather than given the class in markup — it
+   is the settings page's group stack, which is exactly the "list of content
+   blocks" this was written for. */
+.hln-stagger > *,
+.set-sections > * {
+  animation: hln-reveal var(--dur-reveal) var(--ease-editorial) both;
+}
+.hln-stagger > :nth-child(1),
+.set-sections > :nth-child(1) { animation-delay: 0ms; }
+.hln-stagger > :nth-child(2),
+.set-sections > :nth-child(2) { animation-delay: calc(var(--stagger-step) * 1); }
+.hln-stagger > :nth-child(3),
+.set-sections > :nth-child(3) { animation-delay: calc(var(--stagger-step) * 2); }
+.hln-stagger > :nth-child(4),
+.set-sections > :nth-child(4) { animation-delay: calc(var(--stagger-step) * 3); }
+.hln-stagger > :nth-child(5),
+.set-sections > :nth-child(5) { animation-delay: calc(var(--stagger-step) * 4); }
+.hln-stagger > :nth-child(6),
+.set-sections > :nth-child(6) { animation-delay: calc(var(--stagger-step) * 5); }
+.hln-stagger > :nth-child(7),
+.set-sections > :nth-child(7) { animation-delay: calc(var(--stagger-step) * 6); }
+.hln-stagger > :nth-child(n + 8),
+.set-sections > :nth-child(n + 8) { animation-delay: calc(var(--stagger-step) * 7); }
+
+/* ── Overlays: scrim + centered cards ────────────────────────────────────────
+   Two presence mechanisms, same vocabulary:
+   • Dialogs are Ark UI components — Ark drives [data-state="open"|"closed"] and
+     holds the node mounted until the exit animation ends.
+   • Settings / Bin still use the app's own <Presence> + .is-closing. */
+.settings-backdrop,
+.bin-backdrop {
+  animation: hln-scrim-in var(--dur-2) var(--ease-out);
+}
+.settings-card,
+.bin-card {
+  animation: hln-pop-in var(--dur-3) var(--ease-out);
+}
+.settings-overlay.is-closing .settings-backdrop,
+.bin-overlay.is-closing .bin-backdrop {
+  animation: hln-scrim-out var(--dur-2) var(--ease-in) forwards;
+}
+.settings-overlay.is-closing .settings-card,
+.bin-overlay.is-closing .bin-card {
+  animation: hln-pop-out var(--dur-1) var(--ease-in) forwards;
+}
+
+.dialog-scrim[data-state="open"] {
+  animation: hln-scrim-in var(--dur-2) var(--ease-out);
+}
+.dialog-scrim[data-state="closed"] {
+  animation: hln-scrim-out var(--dur-2) var(--ease-in) forwards;
+}
+.dialog[data-state="open"] {
+  animation: hln-card-in var(--dur-2) var(--ease-out);
+}
+.dialog[data-state="closed"] {
+  animation: hln-card-out var(--dur-1) var(--ease-in) forwards;
+}
+
+/* Full-screen graph overlay: a plain fade (it's inset, not translate-centered). */
+.graph-view {
+  animation: hln-fade-in var(--dur-3) var(--ease-out);
+}
+.graph-view.is-closing {
+  animation: hln-fade-out var(--dur-2) var(--ease-in) forwards;
+}
+
+/* Full-screen settings page: same plain fade as the graph overlay. */
+.settings-page {
+  animation: hln-fade-in var(--dur-3) var(--ease-out);
+}
+.settings-page.is-closing {
+  animation: hln-fade-out var(--dur-2) var(--ease-in) forwards;
+}
+
+/* Editor placeholders. */
+.empty-state,
+.new-tab-view {
+  animation: hln-fade-in var(--dur-3) var(--ease-out);
+}
+
+/* ── Menus / cards ───────────────────────────────────────────────────────────
+   Ark-driven, so they get a real exit pass (it holds the node mounted until
+   the animation ends). transform-origin is deliberately NOT pinned here: the
+   positioner computes --transform-origin from the placement it actually chose,
+   so a menu that flips upward scales from its bottom edge instead of its top. */
+.tree-context-menu[data-state="open"] {
+  animation: hln-menu-in var(--dur-1) var(--ease-out);
+}
+.tree-context-menu[data-state="closed"] {
+  animation: hln-menu-out var(--dur-1) var(--ease-in) forwards;
+}
+.wikilink-card[data-state="open"] {
+  animation: hln-rise-in var(--dur-2) var(--ease-out);
+}
+.wikilink-card[data-state="closed"] {
+  animation: hln-fade-out var(--dur-1) var(--ease-in) forwards;
+}
+
+/* ── File tree: rows fade in on mount (initial load, folder expand, new note).
+   Opacity only — sliding rows read as web-page garnish; appearing rows read as
+   the OS filling in a list. */
+.tree-row {
+  animation: hln-tree-in var(--dur-2) var(--ease-out);
+}
+
+/* ── Docks: gentle fade when toggled on (opacity only → no layout jump) ──────── */
+.sidebar,
+.right-panel {
+  animation: hln-fade-in var(--dur-2) var(--ease-out);
+}
+
+/* ── Micro-interaction: press feedback ────────────────────────────────────────
+   One tactile language across the app's clickable controls: pressing compresses
+   the control a hair — quick in, quick out, no overshoot on release. It reads as
+   a firm click rather than a rubbery bounce. Excludes controls that already use
+   `transform` for layout (tabs, the + button) — scaling them would fight their
+   translateX — and the window controls, which conventionally don't move. */
+.dialog-btn,
+.settings-done,
+.bin-done,
+.bin-btn,
+.bin-empty-btn,
+.provider-pill,
+.theme-swatch,
+.new-tab-btn,
+.settings-close,
+.bin-close,
+.new-note-btn,
+.new-folder-btn,
+.etool,
+.hbtn,
+.nsb-btn,
+.graph-replay,
+.set-reset,
+.settings-reset,
+.settings-back {
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.dialog-btn:active,
+.settings-done:active,
+.bin-done:active,
+.bin-btn:active,
+.provider-pill:active,
+.new-tab-btn:active,
+.new-note-btn:active,
+.new-folder-btn:active,
+.graph-replay:active,
+.set-reset:active,
+.settings-reset:active,
+.settings-back:active {
+  transform: scale(0.98);
+}
+.theme-swatch:active,
+.etool:active,
+.hbtn:active,
+.nsb-btn:active {
+  transform: scale(0.95);
+}
+/* Disabled toolbar arrows shouldn't appear to respond to a press. */
+.etool:disabled:active,
+.hbtn:disabled:active {
+  transform: none;
+}
+
+/* ── Accessibility: honour reduced-motion ───────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    /* Delay must collapse too, not just duration. The staggered reveal above uses
+       fill-mode `both`, so a child holds its from-state (opacity 0) for the whole
+       delay — collapsing only the duration would leave the 8th row blank for half a
+       second and then blink in. That's worse than the animation it replaces. */
+    animation-delay: 0ms !important;
+    transition-delay: 0ms !important;
+  }
+}

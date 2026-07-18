@@ -1,0 +1,3291 @@
+/* App-chrome styles. Every dimension/colour is transcribed from the Qt QML
+   components (TitleBar, Sidebar, SidebarHeader, SidebarSearch, FileTree, …). */
+
+/* ---------- Shell layout (Main.qml) ---------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg);
+  overflow: hidden;
+  position: relative; /* positioning context for dialogs + vault overlay */
+}
+.titlebar-divider {
+  height: 1px;
+  background: var(--border);
+}
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  position: relative;
+}
+.main__placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+/* ---------- Dockable side panels (resizable + smooth collapse) ----------
+   The *dock* is the clipping/animating shell (its width is the live panel width,
+   or 0 when collapsed). The *inner* holds the panel at a FIXED width so content
+   never squishes as the dock animates to 0 — it just slides out of the clip. */
+.sidebar-dock,
+.right-panel-dock {
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  transition: width var(--dur-3) var(--ease-out);
+}
+.sidebar-dock__inner,
+.right-panel-dock__inner {
+  height: 100%;
+}
+/* right dock's content is pinned to the right edge so it reveals/hides from the
+   window edge inward (mirrors the sidebar revealing from the left). */
+.right-panel-dock {
+  display: flex;
+  justify-content: flex-end;
+}
+/* No width transition while dragging a handle — the edge must track the pointer. */
+.app.is-resizing .sidebar-dock,
+.app.is-resizing .right-panel-dock {
+  transition: none;
+}
+.app.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Drag strip between a dock and the main pane. */
+.resize-handle {
+  flex: 0 0 auto;
+  width: 6px;
+  margin: 0 -3px; /* overlap the seam so it doesn't add layout width */
+  z-index: 5;
+  cursor: col-resize;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+.resize-handle__bar {
+  width: 1px;
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.resize-handle:hover .resize-handle__bar,
+.app.is-resizing .resize-handle__bar {
+  background: var(--accent-text);
+}
+/* Right panel (RightPanel.qml, width 280, color surface). ColumnLayout with
+   leftMargin 13 / topMargin 36 / bottomMargin 12, spacing 8. */
+.right-panel {
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Padded content; the footer is a sibling so its divider stays full-bleed. Uses the
+   same --gutter as the sidebar (this used to be 12px 12px 12px 13px — the stray 13
+   put the two docks' columns 1px out of step). */
+.right-panel__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--gutter);
+  overflow: hidden;
+}
+/* Label rows are --hit tall, so "Graph" lands on the editor-toolbar row and the
+   mini-graph below it lands on the search-bar row by construction — no margin
+   nudges, so the alignment survives a resize. */
+.right-panel__label {
+  height: var(--hit);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+.right-panel__label--outline {
+  margin-top: var(--gutter);
+}
+.right-panel__outline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Mini-graph box (RightPanel.qml Rectangle: height 172, radius 8, 1px border) */
+.mini-graph {
+  flex: 0 0 auto;
+  height: 172px;
+  min-height: 172px;
+  border-radius: var(--r-md);
+  background: var(--graph-bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* let pointer drag pan/zoom without the page scrolling */
+}
+
+/* Outline (Outline.qml, 26px rows) */
+.outline {
+  display: flex;
+  flex-direction: column;
+}
+.outline__empty {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-style: italic;
+  padding-top: 2px;
+}
+.outline-row {
+  position: relative;
+  height: 26px;
+  margin-right: 2px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  cursor: default;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.outline-row:hover {
+  background: var(--overlay-hover);
+}
+.outline-tick {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--accent-text);
+}
+.outline-row__label {
+  flex: 1;
+  min-width: 0;
+  padding-right: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.outline-row--top .outline-row__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.outline-row:hover .outline-row__label {
+  color: var(--text);
+}
+
+/* Graph view overlay (GraphView.qml — covers the editor area below the toolbar).
+   Its enter/leave animation is owned by motion.css (.graph-view → hln-fade-in). */
+.graph-view {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--graph-bg);
+}
+.graph-replay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.graph-replay:hover {
+  background: var(--elevated);
+}
+.graph-replay__icon {
+  color: var(--accent-text);
+  font-size: 15px;
+}
+
+/* ---------- Empty state (EmptyState.qml) ---------- */
+.empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 24px;
+  text-align: center;
+}
+.empty-state__title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: var(--lh-display);
+  letter-spacing: var(--track-display);
+  color: var(--text-muted);
+}
+.empty-state__sub {
+  font-size: 13px;
+  line-height: var(--lh-body);
+  color: var(--text-faint);
+}
+
+/* ---------- New-tab view (NewTabView.qml) ---------- */
+.new-tab-view {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.new-tab-view__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.new-tab-view__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: var(--lh-display);
+  letter-spacing: var(--track-display);
+  color: var(--text-dim);
+}
+.new-tab-view__actions {
+  display: flex;
+  gap: 10px;
+  padding-top: 4px;
+}
+.new-tab-btn {
+  height: 34px;
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  font-size: 13px;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.new-tab-btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.new-tab-btn--primary:hover {
+  background: var(--accent-hover);
+}
+.new-tab-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.new-tab-btn--ghost:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+
+/* ---------- Vault selection overlay (VaultSelectionOverlay.qml) ---------- */
+.vault-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 24px;
+  text-align: center;
+}
+.vault-overlay__title {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 400;
+  line-height: var(--lh-display);
+  letter-spacing: var(--track-display);
+  color: var(--text);
+}
+.vault-overlay__sub {
+  font-size: 14px;
+  line-height: var(--lh-body);
+  color: var(--text-dim);
+}
+.vault-overlay__btn {
+  width: 150px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  /* --on-accent, NOT white. This was hardcoded #ffffff on a fill-only token: on
+     the default gold accent that lands at ~1.5:1 and the label all but vanishes.
+     --on-accent is the counterpart contrast.test.mts pins at >= 4.5:1. */
+  color: var(--on-accent);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.vault-overlay__btn:hover {
+  background: var(--accent-hover);
+}
+
+/* ---------- Modal dialogs (NewFolderDialog.qml / DeleteConfirmDialog.qml) ---------- */
+/* Dialogs are Ark UI components portaled to <body>, so these three parts are
+   `fixed` to the viewport rather than absolute inside .app, and the card is
+   centred by the positioner's flexbox instead of a -50%/-50% transform (which
+   would fight the scale animation). */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: rgba(0, 0, 0, 0.5);
+}
+.dialog-positioner {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog {
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  outline: none; /* Ark focuses the card; the focus ring belongs on the field */
+}
+/* Native dialogs don't band their title or footer with rules — the card is one
+   surface and spacing does the grouping. */
+.dialog__header {
+  height: 44px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 16px;
+}
+.dialog__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.dialog__body--folder {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+.folder-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.folder-input:focus {
+  border-color: var(--accent-text);
+}
+.folder-input::placeholder {
+  color: var(--text-faint);
+}
+.dialog__body--delete {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+}
+.dialog__body--delete p {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.dialog__footer {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 4px;
+}
+.dialog-btn {
+  min-width: 76px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.dialog-btn--cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.dialog-btn--cancel:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+/* --on-accent, NOT white: --accent is a fill-only token and on the default
+   palette it is #ffe000, against which white text sits at ~1.07:1. --on-accent
+   is the counterpart the contrast test pins at >= 4.5:1 for every palette. */
+.dialog-btn--create {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.dialog-btn--create:hover {
+  background: var(--accent-hover);
+}
+.dialog-btn--delete {
+  background: var(--danger);
+  color: #ffffff;
+  font-weight: 600;
+}
+.dialog-btn--delete:hover {
+  background: var(--danger-hover);
+}
+
+/* ---------- In-note find bar ----------
+   A compact island floating in the editor's top-right corner — the native find
+   pattern — instead of a full-width strip that buried the note title. It drops
+   in a few pixels and fades; closed, it's gone from both pointer and layout. */
+.note-search-slot {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  width: min(400px, calc(100% - 28px));
+  z-index: 6;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+.note-search-slot.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.note-search-bar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lift);
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.note-search-bar.focused {
+  border-color: var(--accent-text);
+}
+.note-search-bar__field {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font);
+}
+.note-search-bar__field::placeholder {
+  color: var(--text-faint);
+}
+.note-search-bar__counter {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.note-search-bar__nav {
+  display: flex;
+  gap: 2px;
+}
+.nsb-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.nsb-btn:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+
+/* ---------- Tree context menu (TreeContextMenu.qml) ---------- */
+/* Menus and the hover card are placed by their Ark positioner (portaled to
+   <body>, with collision detection), so the panels are static and carry no
+   left/top of their own. z-index goes on the CONTENT part — the positioner reads
+   it back off and mirrors it, which is how nested layers stay ordered. */
+.tree-context-menu {
+  z-index: 200;
+  padding: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lift);
+  outline: none;
+  transform-origin: var(--transform-origin);
+}
+/* Keyboard navigation highlights via [data-highlighted]; the mouse still uses
+   :hover. Both must paint the same or arrow-key navigation is invisible. */
+.tree-context-item[data-highlighted],
+.wikilink-menu__row[data-highlighted],
+.wikilink-menu__action[data-highlighted] {
+  background: var(--elevated);
+  color: var(--text);
+}
+.tree-context-item--danger[data-highlighted] {
+  background: var(--danger-soft);
+  color: var(--danger-hover);
+}
+/* Editor variant: wider rows (they carry the selected phrase) + a soft shadow. */
+.editor-context-menu {
+  z-index: 300;
+  box-shadow: var(--shadow-pop);
+}
+.editor-context-menu .tree-context-item {
+  width: 220px;
+}
+.editor-context-menu .tree-context-item > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The selected phrase inside "Create note “…”" */
+.editor-context-item__title {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+/* Small format glyph (B / I / H) aligned like the row's icon slot. */
+.ctx-fmt {
+  width: 13px;
+  min-width: 13px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.ctx-fmt--bold {
+  font-weight: 800;
+}
+.ctx-fmt--italic {
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+}
+.ctx-fmt--mark {
+  font-weight: 700;
+  color: var(--accent-text);
+}
+/* Link menu (right-click a wikilink) reuses the .wikilink-menu__* rows, which
+   size to the container — give it a sensible width instead of the 220px phrase rows. */
+.editor-context-menu--link {
+  min-width: 170px;
+}
+.tree-context-item {
+  width: 140px;
+  height: 30px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: default;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.tree-context-item:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+.tree-context-item--danger {
+  color: var(--danger);
+}
+.tree-context-item--danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger-hover);
+}
+.tree-context-item__gap {
+  width: 13px;
+  min-width: 13px;
+}
+.tree-context-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--divider);
+}
+.tree-empty {
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- Settings panel (SettingsPanel.qml) ---------- */
+.settings-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 300;
+}
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.settings-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(460px, calc(100% - 80px));
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
+  overflow-x: hidden; /* vertical scroller only — no sideways drift */
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+.settings-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.settings-header__spacer {
+  flex: 1;
+}
+.settings-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.settings-close:hover {
+  background: var(--elevated);
+}
+.settings-divider {
+  height: 1px;
+  background: var(--divider);
+}
+
+/* ---------- Settings: full-page layout (back button + section rail) ---------- */
+.settings-page {
+  position: absolute;
+  top: 38px; /* below the title bar so window controls stay reachable */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.settings-page__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--divider);
+}
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 8px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.settings-back:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.settings-back__arrow {
+  font-size: 16px;
+  line-height: 1;
+}
+.settings-page__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.settings-page__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.settings-nav {
+  flex: 0 0 196px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--divider);
+  overflow-y: auto;
+}
+.settings-nav__item {
+  text-align: left;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.settings-nav__item:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.settings-nav__item.sel {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+.settings-content__inner {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 28px 28px 56px;
+}
+/* The one display-scale moment on the settings page — the section name. Serif,
+   large, tight, so it reads as an editorial title rather than a form legend. */
+.settings-content__heading {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 400;
+  line-height: var(--lh-display);
+  letter-spacing: var(--track-display);
+  color: var(--text);
+  margin-bottom: 26px;
+}
+
+/* Appearance controls */
+.set-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.set-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Group labels are META, not headings: small, uppercase, widely tracked, muted.
+   Setting them this way is what buys the display heading above its contrast —
+   at 13px/600 in --text they competed with it. */
+.set-group__title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--track-wide);
+  color: var(--text-muted);
+}
+.set-group__hint {
+  font-size: 12px;
+  line-height: var(--lh-body);
+  color: var(--text-muted);
+  margin-top: -4px;
+}
+/* Segmented control (light / dark / system). Selection is a raised neutral
+   chip — the native segmented look — not an accent slab; accent stays reserved
+   for links, selection tints and the primary action. */
+.seg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  width: fit-content;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.seg__opt {
+  padding: 6px 18px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.seg__opt:hover:not(.sel) {
+  color: var(--text);
+}
+.seg__opt.sel {
+  background: var(--elevated);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-hair);
+}
+/* Colour row: native colour well + hex field + quick swatches */
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.color-well {
+  width: 42px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: none;
+  cursor: pointer;
+}
+.color-well::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+.color-well::-webkit-color-swatch {
+  border: none;
+  border-radius: var(--r-xs);
+}
+.hex-field {
+  width: 110px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.hex-field:focus {
+  outline: none;
+  border-color: var(--accent-text);
+}
+.save-name {
+  width: 210px;
+  font-family: var(--font);
+}
+
+/* Colour target selector (which colour the matrix edits) */
+.color-targets {
+  display: flex;
+  gap: 10px;
+}
+.color-target {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.color-target:hover {
+  background: var(--surface2);
+}
+.color-target.active {
+  border-color: var(--accent-text);
+  background: var(--surface2);
+}
+.color-target__chip {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}
+.color-target__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.color-target__hex {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.color-inputs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Unified colour control: swatch + hex + picker icon in one pill, matching the
+   Accent/Background chips. */
+.color-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 11px 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+}
+.color-control__well {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+}
+.color-control__well::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.color-control__well::-webkit-color-swatch {
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: var(--r-sm);
+}
+.color-control__hex {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.color-control__hex:focus {
+  outline: none;
+}
+.color-control__icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+/* Professional colour matrix (Tailwind scale): hue down, depth across. Fills its
+   column as square cells so the 10×11 grid reads as a near-square block. */
+.palette {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+}
+.palette__shade {
+  font-size: 8px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-faint);
+  padding-bottom: 2px;
+  letter-spacing: -0.2px;
+}
+.palette__sw {
+  aspect-ratio: 1;
+  border-radius: var(--r-xs);
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.palette__sw:hover {
+  transform: scale(1.2);
+  position: relative;
+  z-index: 1;
+}
+.palette__sw.sel {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-text);
+}
+.swatch-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.swatch:hover {
+  transform: scale(1.12);
+}
+.swatch.sel {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-text);
+}
+.text-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.text-btn:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+.text-btn--accent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.text-btn--accent:hover {
+  background: var(--accent-soft-hi);
+  color: var(--accent-text);
+}
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Live preview strip */
+.theme-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.theme-preview__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.theme-preview__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.theme-preview__text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.theme-preview__chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.theme-preview__btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* Preset + saved theme cards */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 10px;
+  /* It sits inside a flex column card, where it would otherwise collapse to the
+     track minimum and stack into one narrow column. */
+  width: 100%;
+}
+.preset-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.preset-card:hover {
+  border-color: var(--accent-text);
+  background: var(--surface2);
+}
+/* The built-in theme currently applied. */
+.preset-card.sel {
+  border-color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.preset-card.sel .preset-card__name {
+  color: var(--text);
+  font-weight: 600;
+}
+.preset-card__swatch {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preset-card__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.preset-card__name {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preset-card--saved {
+  padding: 0;
+}
+.preset-card__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.preset-card__del {
+  width: 28px;
+  align-self: stretch;
+  color: var(--text-muted);
+  font-size: 11px;
+  background: transparent;
+  border-left: 1px solid var(--border);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.preset-card__del:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.set-reset {
+  align-self: flex-start;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.set-reset:hover:not(:disabled) {
+  background: var(--elevated);
+  color: var(--text);
+}
+.set-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------- Appearance: Theme / Font sub-tabs + two-column editor ---------- */
+.app-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--divider);
+  margin-bottom: 4px;
+}
+.app-tab {
+  font-size: 14px;
+  padding: 0 0 9px;
+  color: var(--text-muted);
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.app-tab:hover {
+  color: var(--text-dim);
+}
+.app-tab.sel {
+  color: var(--text);
+  border-bottom-color: var(--accent-text);
+}
+.theme-editor__cols {
+  display: grid;
+  grid-template-columns: 1fr 264px;
+  gap: 24px;
+  align-items: start;
+}
+.theme-editor__left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.theme-editor__right {
+  min-width: 0;
+}
+.theme-editor__right .set-group__title {
+  margin-bottom: 6px;
+}
+
+/* Editing pill (names the active target, with a reset for element overrides) */
+.edit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: -2px;
+}
+.edit-row__label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.edit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 3px 6px 3px 9px;
+}
+.edit-pill__reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-xs);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-muted);
+  background: transparent;
+}
+.edit-pill__reset:hover {
+  color: var(--text);
+  background: var(--overlay-hover);
+}
+
+/* Clickable preview: every element is a target you can recolour */
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.preview-head__hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.theme-preview2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.tp-dot {
+  width: 12px;
+  height: 12px;
+  min-width: 12px;
+  border-radius: 50%;
+}
+.tp-item {
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  /* Dashed ring marks every element as clickable; the selected one gets a solid
+     accent ring instead. */
+  outline: 1px dashed var(--text-faint);
+  outline-offset: 2px;
+  transition: box-shadow var(--dur-1) var(--ease-out);
+}
+.tp-item.sel {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-text);
+}
+.tp-item:not(.tp-tag):not(.tp-btn) {
+  padding: 2px 4px;
+}
+.tp-item:first-of-type {
+  font-size: 17px;
+  font-weight: 500;
+}
+.tp-link {
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Live preview swatch for the Tag element in the theme editor. Pill, to match what
+   .cm-tag actually renders as in a note — its colour/background stay inline-styled
+   from the editor's current tag colour, so only the SHAPE is set here. */
+.tp-tag {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  margin-left: auto;
+}
+.tp-btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 13px;
+  border-radius: var(--r-sm);
+}
+
+/* My themes — full-width card */
+.mythemes-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-top: 18px;
+}
+.mythemes-card__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.mythemes-card .save-name {
+  width: 190px;
+}
+.mythemes-card__list {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.mythemes-card__list .preset-card {
+  background: var(--surface);
+}
+
+/* Delete-theme confirmation */
+.mini-confirm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mini-confirm {
+  width: min(340px, calc(100% - 48px));
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+}
+.mini-confirm__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.mini-confirm__body {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.mini-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.mini-confirm__delete {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--danger);
+  transition: background var(--dur-1) var(--ease-out);
+}
+.mini-confirm__delete:hover {
+  background: var(--danger-hover);
+}
+
+/* Font tab: search bar + previewing list + sample card */
+.font-select {
+  width: 220px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+}
+.font-select:focus {
+  outline: none;
+  border-color: var(--accent-text);
+}
+.font-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  max-width: 340px;
+}
+.font-search:focus-within {
+  border-color: var(--accent-text);
+}
+.font-search__icon {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.font-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+.font-search__input:focus {
+  outline: none;
+}
+.font-search__clear {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+}
+.font-search__clear:hover {
+  color: var(--text);
+  background: var(--overlay-hover);
+}
+.font-list {
+  margin-top: 10px;
+  max-width: 420px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.font-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  background: transparent;
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.font-row:last-child {
+  border-bottom: none;
+}
+.font-row:hover {
+  background: var(--overlay-hover);
+}
+.font-row.sel {
+  background: var(--accent-soft);
+}
+.font-row__name {
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.font-row.sel .font-row__name {
+  color: var(--accent-text);
+}
+.font-row__sample {
+  font-size: 14px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.font-list__empty {
+  padding: 16px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.font-preview {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+/* NOTE: no font-family here on purpose. .font-preview carries an inline
+   font-family of the currently-selected face, and these two inherit it — that
+   inheritance IS the preview. Pinning --font-display here would make every font
+   in the list preview as the serif. */
+.font-preview__h {
+  font-size: 22px;
+  line-height: var(--lh-display);
+  letter-spacing: var(--track-display);
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.font-preview__b {
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1.65;
+}
+
+.settings-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-field__label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.provider-flow,
+.theme-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.provider-pill {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 12px;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.provider-pill:hover {
+  background: var(--elevated);
+}
+/* Selected = a quiet accent tint with a contrast-floored label, the same
+   selection language as the sidebar's active row and the settings nav. */
+.provider-pill.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+/* ---------- Graph settings (sliders + reset) ---------- */
+/* Section header row: title on the left, Reset pinned right. */
+.settings-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-reset {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease-out);
+}
+.settings-reset:hover:not(:disabled) {
+  background: var(--elevated);
+  color: var(--text);
+}
+.settings-reset:disabled {
+  opacity: 0.4;
+}
+
+/* ---------- AI answer typing-speed control (Settings → Language Model) ---------- */
+.type-speed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.type-speed__slider {
+  flex: 1;
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface2);
+  outline: none;
+  cursor: pointer;
+}
+.type-speed__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.type-speed__slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.type-speed__value {
+  min-width: 58px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.type-speed__unit {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+.type-speed__preview {
+  margin-top: 10px;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.type-speed__caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  vertical-align: -2px;
+  margin-left: 1px;
+  background: var(--accent-text);
+  animation: hln-caret-blink 1s steps(1) infinite;
+}
+
+.gslider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+}
+.gslider-group__title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.gslider {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gslider__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.gslider__label {
+  font-size: 12.5px;
+  color: var(--text);
+}
+/* Live value doubles as a per-field reset target (double-click). */
+.gslider__value {
+  min-width: 46px;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  text-align: right;
+  transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.gslider__value.is-modified {
+  color: var(--accent-text);
+  background: var(--overlay-hover);
+}
+.gslider__hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* Range input, restyled in both WebKit and Firefox. */
+.gslider__track {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  margin: 4px 0 2px;
+  border-radius: 2px;
+  background: var(--elevated);
+  outline: none;
+}
+.gslider__track::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  box-shadow: var(--shadow-hair);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.gslider__track::-webkit-slider-thumb:hover {
+  transform: scale(1.18);
+}
+.gslider__track::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Switch for "Show note titles". */
+.gtoggle {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: var(--r-md);
+  border: none;
+  background: var(--elevated);
+  transition: background var(--dur-1) var(--ease-out);
+}
+.gtoggle.is-on {
+  background: var(--accent);
+}
+.gtoggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 180ms var(--ease-out);
+}
+.gtoggle.is-on .gtoggle__knob {
+  transform: translateX(16px);
+  background: var(--on-accent);
+}
+
+/* Models available to the entered API key (fetched live) — compact mono chips. */
+.model-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 96px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.model-chip {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.model-chip:hover {
+  background: var(--elevated);
+}
+.model-chip.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.settings-hint--error {
+  color: var(--danger);
+}
+.settings-hint--ok {
+  color: var(--accent-text);
+}
+.settings-input-box {
+  height: 38px;
+  border-radius: var(--r-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.settings-input-box:focus-within {
+  border-color: var(--accent-text);
+}
+.settings-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+}
+.settings-input--mono {
+  font-family: "Consolas", var(--font-mono);
+}
+.settings-input::placeholder {
+  color: var(--text-faint);
+}
+.settings-show-toggle {
+  font-size: 12px;
+  color: var(--accent-text);
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}
+.settings-show-toggle:hover {
+  color: var(--accent-hover);
+}
+.settings-show-toggle.is-disabled {
+  color: var(--text-faint);
+  pointer-events: none;
+}
+/* Stands in for the input when a key is saved: the credential store never hands the
+   value back, so there is nothing to render in a real field. */
+.settings-input--static {
+  color: var(--text-muted);
+  user-select: none;
+  align-self: center;
+}
+.settings-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.theme-swatch {
+  position: relative;
+  width: 96px;
+  height: 48px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  cursor: default;
+  padding: 0;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.theme-swatch.selected {
+  border-width: 2px;
+  border-color: var(--accent-text);
+}
+.theme-swatch__dot {
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-sm);
+}
+.theme-swatch__label {
+  position: absolute;
+  left: 9px;
+  bottom: 7px;
+  right: 7px;
+  text-align: left;
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-done {
+  align-self: flex-end;
+  width: 86px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.settings-done:hover {
+  background: var(--accent-hover);
+}
+
+/* ---------- Recycle bin (BinPanel) ---------- */
+.bin-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 300;
+}
+.bin-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.bin-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100% - 80px));
+  max-height: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+}
+.bin-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+.bin-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.bin-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bin-header__spacer {
+  flex: 1;
+}
+.bin-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.bin-close:hover {
+  background: var(--elevated);
+}
+.bin-divider {
+  height: 1px;
+  background: var(--divider);
+}
+.bin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin: 0 -6px;
+  padding: 0 6px;
+}
+.bin-empty {
+  padding: 28px 8px;
+  text-align: center;
+}
+.bin-empty__title {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.bin-empty__hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.bin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  transition: background var(--dur-1) var(--ease-out);
+}
+.bin-row:hover {
+  background: var(--surface2);
+}
+.bin-row__icon {
+  color: var(--text-muted);
+  display: flex;
+}
+.bin-row__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bin-row__name {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bin-row__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bin-row__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.bin-btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.bin-btn--restore {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.bin-btn--restore:hover {
+  background: var(--accent-hover);
+}
+.bin-btn--delete {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--danger);
+}
+.bin-btn--delete:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger-soft);
+}
+.bin-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bin-empty-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--danger);
+  font-size: 13px;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.bin-empty-btn:hover {
+  background: var(--danger-soft);
+}
+.bin-done {
+  width: 86px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.bin-done:hover {
+  background: var(--accent-hover);
+}
+
+/* ---------- Frontmatter hiding (frontmatter.ts) ---------- */
+/* !important to beat CM6's own equal-specificity .cm-line display rule. */
+.cm-frontmatter-line {
+  display: none !important;
+}
+
+/* ---------- Wikilink hover card (LivePreviewEditor.qml linkMenu / preview) ---------- */
+.wikilink-card {
+  z-index: 300;
+  width: 300px;
+  outline: none;
+  transform-origin: var(--transform-origin);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+.wikilink-card--menu {
+  padding: 5px;
+}
+
+/* single-target → note preview */
+.wikilink-card__preview {
+  padding: 12px 14px;
+  cursor: default;
+}
+.wikilink-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.wikilink-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wikilink-card__line {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wikilink-card__empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+.wikilink-card__new {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wikilink-card__new-label {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.wikilink-card__new-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+/* multi-target → open menu */
+.wikilink-menu__header {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 4px 8px 2px;
+}
+.wikilink-menu__row {
+  height: 30px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.wikilink-menu__row:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+.wikilink-menu__divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 4px 0;
+}
+.wikilink-menu__action {
+  height: 30px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--accent-text);
+  cursor: default;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.wikilink-menu__action:hover {
+  background: var(--accent-soft);
+}
+/* A menu row's target that has no note yet → a faint "New" tag, so the reader
+   knows the row will CREATE the note rather than open an existing one. */
+.wikilink-menu__row {
+  gap: 8px;
+}
+.wikilink-menu__new {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+/* Unresolved wikilink (its shown target has no note yet): still clearly a LINK —
+   accent-coloured like a resolved one, but a dashed underline and slightly dimmed
+   marks it as "click to create". (It used to render at --text-faint, which read as
+   disabled body text, not a link.) Compound selector + !important so it still wins
+   under a custom link colour. */
+.cm-wikilink.cm-wikilink--new {
+  color: var(--accent-text) !important;
+  opacity: 0.78;
+  border-bottom: 1px dashed var(--accent-text) !important;
+}
+/* Status bar (StatusBar.qml, height 26, surface) */
+.statusbar {
+  height: 26px;
+  min-height: 26px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.statusbar__left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.statusbar__path {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+/* ---------- Tabs (rendered inside .topbar__tabs) ----------
+   Flat document tabs, native-style: the strip is one quiet band, the active tab
+   is marked by label emphasis plus a short accent bar UNDER the label (WinUI
+   selection indicator) — not a browser-style notch into the editor. */
+.tab {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 10px;
+  cursor: default;
+  overflow: hidden;
+  border: 1px solid transparent; /* keeps inactive tabs the same size as the active one */
+  /* width + transform animate so tabs glide when the strip resizes (open/close) and
+     when neighbours slide aside during a drag; background for hover. The held tab
+     turns its transition off inline so it tracks the pointer 1:1. */
+  transition:
+    background var(--dur-1) var(--ease-out),
+    transform var(--dur-2) var(--ease-out),
+    width var(--dur-2) var(--ease-out);
+  touch-action: none;
+}
+.tab:hover:not(.active) {
+  background: var(--overlay-hover);
+}
+/* While a tab is picked up it lifts physically — solid fill + a real shadow —
+   and never shows a hover bg. */
+.tab--held {
+  cursor: grabbing;
+  background: var(--elevated);
+  box-shadow: var(--shadow-lift);
+}
+/* Compact tabs (many open). The LABEL is what identifies a tab, so it's the thing
+   that survives the squeeze — dropping it left a row of identical ×'s that could
+   only be closed, never navigated, which defeats the point of a tab strip. Even
+   2–3 characters distinguish tabs; a × distinguishes nothing.
+   So the × falls back to the base rule (hover/active only) and is laid OVER the
+   label's right end instead of taking flow space, so revealing it doesn't reflow
+   the name out from under the pointer. */
+.tab--compact {
+  padding: 0 4px 0 6px;
+}
+/* At these widths the "…" costs ~7px — a fifth of the tab — to say nothing. Clipping
+   instead spends those pixels on real characters ("Unt" rather than "U…"), which is
+   what actually tells two tabs apart. */
+.tab--compact .tab__label {
+  text-overflow: clip;
+}
+.tab--compact .tab__close {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0;
+  /* Solid chip: it sits on top of the label, so it must occlude rather than blend. */
+  background: var(--elevated);
+}
+/* Overlapping tabs cascade left-to-right with LATER tabs on top, so each tab's LEFT
+   edge is the exposed sliver — that's where the label starts, so even a deep cascade
+   still reads as a list of names. A hovered/active tab lifts clear to show in full. */
+.tab--overlap {
+  padding: 0 4px 0 6px;
+  box-shadow: -1px 0 0 var(--divider); /* faint seam so stacked tabs read apart */
+}
+/* Stop the label at the seam (--tab-exposed, set by the layout) rather than letting it
+   run under the covering tab, where it would be sliced mid-glyph and the names would
+   read as one unbroken smear. */
+.tab--overlap .tab__label {
+  max-width: calc(var(--tab-exposed, 100%) - 5px);
+}
+/* A lifted tab is fully visible, so its label gets the whole tab back. */
+.tab--overlap.active .tab__label,
+.tab--overlap:hover .tab__label {
+  max-width: none;
+}
+/* Active tab: flat — a whisper of fill so the slot reads as "held down", the
+   label at full strength, and a short accent bar under it. No notch, no border:
+   the strip stays one solid piece of chrome. */
+.tab.active {
+  background: var(--overlay-hover);
+}
+/* An overlapping tab that's active or hovered lifts clear of the cascade, so it
+   loses the seam shadow and shows in full. */
+.tab--overlap.active,
+.tab--overlap:hover {
+  box-shadow: none;
+}
+.tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  /* accent-text, not accent: this 2px bar is painted on the page, so on a pale
+     accent the raw fill would be invisible. accent-text carries the contrast floor. */
+  background: var(--accent-text);
+  border-radius: 1px 1px 0 0;
+}
+.tab__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab.active .tab__label {
+  color: var(--text);
+  font-weight: 600;
+}
+.tab__close {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 3px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 4px;
+}
+.tab:hover .tab__close,
+.tab.active .tab__close {
+  display: flex;
+}
+.tab__close:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+.tab-plus {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 18px;
+  /* Always above the tabs (even the overlapping cascade) so it stays clickable, and
+     placed by translateX right after the last tab — never pushed off the strip. */
+  z-index: 20000;
+  transition: background var(--dur-1) var(--ease-out), transform var(--dur-2) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.tab-plus:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+
+/* Editor toolbar controls (docked on the right of the tab strip) */
+.hbtn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.hbtn:hover:not(:disabled) {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.hbtn.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.hbtn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.hbtn__arrow {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* In-editor toolbar: breadcrumb (left) + note tools (right), no dividing line.
+   Same top gap + row height as the sidebar header so they align across the seam. */
+.editor-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px 0;
+}
+.editor-toolbar__crumb {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.editor-toolbar__tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.etool {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.etool:hover:not(:disabled) {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.etool.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.etool:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.etool__arrow {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Editor area */
+.editor-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative; /* positioning context for the GraphView overlay */
+}
+.editor-host {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.editor-host .cm-editor {
+  height: 100%;
+}
+/* The readable column is always centred (see editorTheme.ts) so it glides with the
+   sidebar's width animation — no left-align↔centre snap when the dock collapses. */
+
+/* ---------- Title bar (TitleBar.qml, height 32) ---------- */
+/* Row 1 = the integrated tab bar. Its bottom border is the editor pane's TOP
+   edge, which the active tab notches through (see .tab.active). */
+.topbar {
+  height: 38px;
+  min-height: 38px;
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  user-select: none;
+}
+/* Left cell tracks the sidebar width so the tabs start at the editor's edge. */
+.topbar__left {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  /* Left-pad the shared gutter so the toggle's left edge lines up exactly with the
+     New note button and the search field below it (both start at --gutter). */
+  padding: 0 8px 0 var(--gutter);
+  /* Draws the sidebar↔editor divider straight up through the full title-bar
+     height, so it lines up with the sidebar's right border below into one
+     continuous vertical line. */
+  border-right: 1px solid var(--border);
+  transition: width var(--dur-3) var(--ease-out);
+}
+.app.is-resizing .topbar__left {
+  transition: none;
+}
+/* Tabs fill the space between the left cell and the right zone, and are clipped
+   by it — they never bleed past the divider into the window-controls area. The
+   tabs + the + button inside are ABSOLUTELY positioned (placed by translateX from
+   TabStrip's layout), so this is their positioning context, not a flex row. */
+.topbar__tabs {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+  position: relative;
+  /* Clip HORIZONTALLY only. `overflow: hidden` also clipped the bottom edge, which
+     killed the active tab's 1px notch over the title bar's bottom border — so that
+     border ran straight under the tab and it read as a separate box from the editor.
+     clip-path keeps tabs out of the window-control area while letting the active tab
+     overflow downward to cover the seam. */
+  overflow: visible;
+  clip-path: inset(0 0 -2px 0);
+}
+/* Right zone: above the right panel, its left border is the tabs' right divider.
+   Width tracks the right-panel width, so collapsing hands space back to tabs. */
+.topbar__right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  border-left: 1px solid var(--border);
+  transition: width var(--dur-3) var(--ease-out);
+}
+.app.is-resizing .topbar__right {
+  transition: none;
+}
+.topbar__drag {
+  flex: 1;
+  align-self: stretch;
+}
+
+/* Sidebar toggle button (SidebarToggleButton.qml, 28x24) */
+.sidebar-toggle {
+  width: 28px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  margin-left: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur-1) var(--ease-out);
+}
+/* In the title bar the gutter is provided by .topbar__left's padding, so drop the
+   button's own left margin — otherwise the toggle sits 2px right of the New note
+   button. (The right-panel toggle in the editor toolbar keeps its margin.) */
+.topbar__left .sidebar-toggle {
+  margin-left: 0;
+}
+.sidebar-toggle:hover {
+  background: var(--overlay-hover);
+}
+.sidebar-toggle__icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+.sidebar-toggle__icon img {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+}
+.sidebar-toggle__filled {
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+/* Right-panel variant: same button, icon mirrored so the fill lands on the right. */
+.sidebar-toggle--right .sidebar-toggle__icon {
+  transform: scaleX(-1);
+}
+
+/* Window controls (WindowControlButton.qml, 46x32) */
+.winctrls {
+  display: flex;
+  margin-left: auto;
+}
+.win-btn {
+  width: 46px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.win-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.win-btn:active {
+  background: var(--elevated);
+}
+.win-btn--close:hover {
+  background: var(--danger);
+  color: #ffffff;
+}
+.win-btn--close:active {
+  background: var(--danger-hover);
+  color: #ffffff;
+}
+
+/* ---------- Sidebar (Sidebar.qml, width 240, color surface) ---------- */
+.sidebar {
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Horizontal padding lives on the CHILDREN, not here, so the scrolling tree can
+     span the dock's full width — that puts its scrollbar flush against the panel edge
+     (not floating 12px inside it) and makes the whole list area scrollable, instead of
+     a column with dead, unscrollable strips down both sides. */
+  padding: 12px 0 0; /* top gap above the New note row */
+}
+
+/* Sidebar header — creation actions: "New note" + New folder, both 30px so they
+   match each other and align with the editor toolbar row across the divider. */
+.sidebar-header {
+  height: 30px;
+  min-height: 30px;
+  margin: 0 var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The one solid-accent control in the resting chrome — everything else holds
+   accent for selection and links, which is what lets this stay the eye's first
+   stop. Borderless: fill + label is the whole statement. */
+.new-note-btn {
+  flex: 1;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.new-note-btn:hover {
+  background: var(--accent-hover);
+  color: var(--on-accent);
+}
+.new-note-btn .icon-btn__plus {
+  font-size: 18px;
+  margin-top: -1px;
+}
+/* New folder — a bordered button the same height as New note. */
+.new-folder-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.new-folder-btn:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+
+/* Generic icon button (IconButton.qml, 28x28) */
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.icon-btn:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.icon-btn:active {
+  background: var(--elevated);
+}
+.icon-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.icon-btn__plus {
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* Search box (SidebarSearch.qml, height 32) */
+.sidebar-search {
+  height: 32px;
+  min-height: 32px;
+  margin: 14px var(--gutter) 0; /* aligns the search's top with the note title across the seam */
+  border-radius: var(--r-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 9px;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.sidebar-search:focus-within {
+  border-color: var(--accent-text);
+}
+.sidebar-search__icon {
+  display: flex;
+  color: var(--text-muted);
+}
+.sidebar-search:focus-within .sidebar-search__icon {
+  color: var(--text-dim);
+}
+.sidebar-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font);
+}
+.sidebar-search input::placeholder {
+  color: var(--text-faint);
+}
+.sidebar-search__clear {
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.sidebar-search__clear:hover {
+  color: var(--text);
+}
+
+/* File tree (FileTree.qml, 32px rows) */
+.tree {
+  flex: 1;
+  margin-top: 12px;
+  /* Full-bleed scroll container: rows keep their inset via this padding, but the
+     scroll area (and its scrollbar) reach the dock's edges. */
+  padding: 0 var(--gutter) 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  /* Expanding/collapsing a folder animates a descendant's height (grid-template-rows
+     below), which is exactly the kind of layout shift Chromium's scroll anchoring
+     tries to "compensate" for by nudging scrollTop on its own — fighting the user's
+     own wheel input right as they expand a folder and making the list feel stuck.
+     This list doesn't need that: turn it off so manual scrolling always wins. */
+  overflow-anchor: none;
+}
+.tree-row {
+  position: relative;
+  height: 32px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  cursor: default;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.tree-row:hover {
+  background: var(--overlay-hover);
+}
+.tree-row.selected {
+  background: var(--accent-soft);
+}
+/* Multi-select membership (Ctrl/Shift+click) — outlined so it reads apart from
+   the active-note highlight even when both apply. */
+.tree-row.picked {
+  background: var(--overlay-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+.tree-row.picked .tree-row__label {
+  color: var(--text);
+}
+.tree-row__gap {
+  width: 18px;
+  min-width: 18px;
+  margin-right: 6px;
+}
+.tree-row__label {
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 8px;
+}
+.tree-row.folder .tree-row__label {
+  color: var(--text);
+}
+.tree-row.selected .tree-row__label {
+  color: var(--text);
+}
+.tree-chevron {
+  width: 18px;
+  min-width: 18px;
+  height: 32px;
+  margin-right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.tree-chevron svg {
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.tree-chevron.expanded svg {
+  transform: rotate(90deg);
+}
+.tree-depth-line {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--overlay-hover);
+}
+
+/* Folder expand/collapse: animate the child block's height via the grid 0fr→1fr
+   trick (no JS height measuring). The inner clips its rows so they slide out of a
+   growing/shrinking window; each newly-mounted row also plays its own subtle
+   fade-in (hln-tree-in), so an expand reads as a smooth reveal, not a snap. */
+.tree-children {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-2) var(--ease-out);
+}
+.tree-children.open {
+  grid-template-rows: 1fr;
+}
+.tree-children__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Drag-and-drop: the folder (or vault root) that would receive the drop, shown
+   with an accent ring so it reads apart from hover/selection highlights. */
+.tree-row.drop-into {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-text);
+}
+.tree.drop-root {
+  box-shadow: inset 0 0 0 1px var(--accent-text);
+  border-radius: var(--r-xs);
+}
+
+/* ---------- Dock footers ----------
+   Shared by both docks. Each footer is a SIBLING of its dock's padded content, so
+   its top divider spans the whole dock rather than stopping short at the padding —
+   that inset hairline was the "line doesn't touch both ends" problem. Both use
+   --footer-h, so the left and right docks end on exactly one baseline. */
+.dock-footer {
+  flex: 0 0 auto;
+  height: var(--footer-h);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--gutter);
+  border-top: 1px solid var(--divider);
+}
+/* Tools sit in the bottom-right corner, opposite the vault tile. */
+.dock-footer--tools {
+  justify-content: flex-end;
+}
+
+/* Vault switcher — fills the sidebar footer so the bottom-left reads as one block
+   instead of a small tile floating next to dead space. */
+.vault-tile {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: var(--hit);
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.vault-tile:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.vault-tile__name {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-tile__chev {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.sb-tile {
+  width: var(--hit);
+  height: var(--hit);
+  border-radius: var(--r-sm);
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.sb-tile:hover {
+  background: var(--overlay-hover);
+  color: var(--text);
+}
+.sb-tile.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* ---------- Ask AI bar (docked to the bottom of the editor) ----------
+   The container spans the whole editor area (left/right offsets = the gap), but is
+   pointer-events:none so it never blocks the note underneath. Collapsed, the wrap is
+   a compact gold "Ask" button pinned to the RIGHT (beside the right panel). Open, the
+   wrap's width animates to 100% — it extends LEFTWARD into a long search bar that
+   reaches the left panel with the same gap. Because the container tracks the editor
+   area, the open bar resizes live as either side panel is dragged. */
+.ask-bar {
+  --ask-gap: 22px;
+  position: absolute;
+  left: var(--ask-gap);
+  right: var(--ask-gap);
+  bottom: 18px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none; /* transparent container — let clicks fall through to the note */
+}
+.ask-wrap {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 74px; /* collapsed = just the compact gold Ask button */
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--accent);
+  border: 1px solid transparent;
+  /* Flat. One diffuse token does the separating, and it adapts per mode. */
+  box-shadow: var(--shadow-lift);
+  transition:
+    width var(--dur-3) var(--ease-out),
+    background var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+/* Open = a neutral input surface with a hairline, not a gold slab: the accent
+   collapses back into the small Ask button inside it. */
+.ask-wrap.is-open {
+  width: 100%; /* extend to the left panel (container already leaves the gap) */
+  background: var(--elevated);
+  border-color: var(--border);
+  box-shadow: var(--shadow-pop);
+}
+/* Leading search glyph — hidden with the rest of the bar when collapsed, revealed
+   at the far left when the bar extends. */
+.ask-lead {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-left: 16px;
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.ask-wrap.is-open .ask-lead {
+  opacity: 1;
+}
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px; /* collapsed pill height; grows when the bar opens */
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font);
+  padding: 0 8px 0 10px;
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.ask-wrap.is-open .ask-input {
+  opacity: 1;
+  height: 40px;
+}
+.ask-input::placeholder {
+  color: var(--text-faint);
+}
+.ask-go {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 13px;
+  border: none;
+  background: transparent; /* the wrap IS the gold pill when collapsed */
+  color: var(--on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: default;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.ask-go:active {
+  transform: scale(0.97); /* firm press-in, no bounce */
+}
+.ask-go__spark {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+.ask-wrap.is-open .ask-go {
+  height: 30px;
+  margin-right: 5px;
+  padding: 0 15px;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  box-shadow: var(--shadow-hair);
+}
+/* Once open, the button is a plain gold "Ask" — drop the sparkle. */
+.ask-wrap.is-open .ask-go__spark {
+  display: none;
+}
+.ask-wrap.is-open .ask-go:hover {
+  background: var(--accent-hover);
+}
+.ask-go--stop {
+  background: var(--elevated) !important;
+  color: var(--text) !important;
+}
+.ask-meta {
+  pointer-events: auto;
+  padding: 0 10px;
+  max-width: 100%;
+  text-align: right;
+}
+.ask-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.ask-error {
+  font-size: 11.5px;
+  color: var(--danger);
+}
+.ask-link {
+  font-size: 12px;
+  color: var(--accent-text);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: default;
+}
+.ask-link:hover {
+  text-decoration: underline;
+}
+/* "Use the internet" toggle inside the open Ask bar. */
+.ask-globe {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: default;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+.ask-globe svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ask-globe:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+.ask-globe.is-on {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+/* Little pill in the meta row while an ask is scoped to a text selection. */
+/* A status badge — UI chrome, so it takes the full editorial treatment: pill,
+   tiny, uppercase, widely tracked, on a soft tint rather than a solid fill.
+   (--accent-soft replaces the ad-hoc color-mix, which duplicated a token that
+   already exists and is derived per mode.) */
+.ask-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--track-wide);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: var(--r-pill);
+  padding: 3px 9px;
+  margin-right: 6px;
+}
+/* Sparkle glyph on the editor's "Ask AI about this" menu row. */
+.ctx-ai {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+  flex: 0 0 auto;
+}
