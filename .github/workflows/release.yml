@@ -1,0 +1,73 @@
+# Builds the Windows x64 bundle and attaches it to a GitHub release.
+#
+# Runs on a clean windows-latest runner rather than a developer machine: Windows
+# Smart App Control blocks Cargo from executing freshly compiled (unsigned) build
+# scripts, which makes a local `tauri build` fail with os error 4551 on machines
+# that enforce it. CI has no such policy and supplies its own GITHUB_TOKEN, so it
+# can publish the release without any local credentials.
+#
+# Triggered by pushing a v* tag; also runnable by hand from the Actions tab.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # Cache the Rust build; a cold Tauri build is slow and this job is the only
+      # way we produce release binaries.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify the suites still pass
+        run: npm test
+
+      # tauri-action takes the body as a STRING (there is no releaseBodyPath
+      # input), so the notes file is read into a step output first.
+      - name: Load release notes
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo 'body<<RELEASE_NOTES_EOF'
+            cat docs/RELEASE_NOTES_v2.md
+            echo 'RELEASE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: HyperLinkNotes ${{ github.ref_name }} — Windows x64
+          releaseBody: ${{ steps.notes.outputs.body }}
+          # Published as a DRAFT on purpose: the installer is unsigned, so it
+          # should be downloaded and run once before it goes public.
+          releaseDraft: true
+          prerelease: false
+          args: --target x86_64-pc-windows-msvc
