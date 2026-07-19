@@ -1,6 +1,6 @@
 [package]
 name = "hyperlink-notes"
-version = "2.0.0"
+version = "2.0.1"
 description = "HyperLinkNotes — a link-first markdown notebook"
 authors = ["Akshay"]
 edition = "2021"

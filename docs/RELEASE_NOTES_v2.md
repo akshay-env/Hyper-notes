@@ -7,7 +7,7 @@ and under the [`v1.0.0`](../../releases/tag/v1.0.0) tag.
 
 ## Install
 
-Download **HyperLinkNotes_2.0.0_x64-setup.exe** (or the `.msi`) below and run it.
+Download **HyperLinkNotes_2.0.1_x64-setup.exe** (or the `.msi`) below and run it.
 
 The app renders through the Microsoft Edge **WebView2** runtime, which is
 preinstalled on Windows 11 and current Windows 10. The installer fetches it if
