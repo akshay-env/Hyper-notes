@@ -4,12 +4,21 @@
 // typing, the drain rate eases upward so the answer never lags minutes behind, then
 // settles back. Freshly typed characters carry a short fade-in decoration.
 //
+// Scrolling is "sticky", the way a chat transcript behaves: the view follows the
+// answer only while the reader is still parked at the tail, and the moment they
+// scroll up to re-read something we leave their scroll position alone until they
+// come back down. See atTail() for why that is measured rather than listened for.
+//
 // The pacing helper (charsThisFrame) is shared with the Settings live preview so the
 // preview types at exactly the rate the real answer will.
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateField, StateEffect } from "@codemirror/state";
 
 const FADE_MS = 260; // how long a just-typed span keeps its fade-in decoration
+
+// Keys that scroll the note. Pressed in the body, they mean the reader is driving —
+// the same signal as a wheel notch (see Typewriter.watchReader).
+const NAV_KEYS = new Set(["PageUp", "PageDown", "ArrowUp", "ArrowDown", "Home", "End"]);
 
 // Newly typed spans are published as a decoration set through this effect; the field
 // holds it and maps it across edits. Kept tiny — the set only ever covers the last
@@ -56,6 +65,10 @@ export class Typewriter {
   private streamDone = false;
   private stopped = false;
   private onIdle: (() => void) | null = null;
+  // Whether the answer still drags the view along. A LATCH, not a per-frame
+  // measurement: see watchReader() for why measuring geometry each frame cannot work.
+  private following = true;
+  private unwatch: (() => void) | null = null;
 
   constructor(
     private view: EditorView,
@@ -63,6 +76,7 @@ export class Typewriter {
     private speed: () => number,
   ) {
     this.insertAt = insertAt;
+    this.watchReader();
   }
 
   // Current insertion offset (grows as text is typed) — the caller reads this to
@@ -94,11 +108,16 @@ export class Typewriter {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.dispose();
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.fresh = [];
-    if (!this.view.state.field(aiFreshField, false)) return;
-    this.view.dispatch({ effects: setFreshDeco.of(Decoration.none) });
+    // Clearing the fade deliberately carries no scrollIntoView: Stop should leave the
+    // reader looking at whatever they were looking at, not jump them to the cut-off
+    // point. Guarded because a rebuilt view may no longer carry the field — but the
+    // waiter in finish() has to be released either way, so it happens outside.
+    if (this.view.state.field(aiFreshField, false))
+      this.view.dispatch({ effects: setFreshDeco.of(Decoration.none) });
     this.onIdle?.();
     this.onIdle = null;
   }
@@ -134,15 +153,21 @@ export class Typewriter {
     this.fresh = this.fresh.filter((r) => now - r.born < FADE_MS);
 
     if (chunk) {
+      const follow = this.following;
       const from = this.insertAt;
       const to = from + chunk.length;
       this.insertAt = to;
       this.fresh.push({ from, to, born: now, id: this.uid++ });
       this.view.dispatch({
         changes: { from, insert: chunk },
-        selection: { anchor: to },
+        // The caret trails the typing only while we're following. Once the reader has
+        // scrolled off, dragging their caret along would fight a click they made to
+        // put it somewhere, and syncing an off-screen DOM selection is exactly the
+        // kind of thing a browser may decide to scroll to. It snaps back to the tail
+        // on the first frame after they return.
+        selection: follow ? { anchor: to } : undefined,
         effects: setFreshDeco.of(this.buildDeco()),
-        scrollIntoView: true,
+        scrollIntoView: follow,
       });
     } else if (this.fresh.length !== prevFresh) {
       this.view.dispatch({ effects: setFreshDeco.of(this.buildDeco()) });
@@ -155,6 +180,76 @@ export class Typewriter {
       this.onIdle = null;
     }
   };
+
+  // Following is driven by the reader's INPUT, not by geometry sampled each frame.
+  //
+  // Measuring "is the tail still on screen?" before every insert sounds equivalent and
+  // is not, for two reasons that both leave the editor feeling locked:
+  //   • A wheel notch is not one jump. Chromium (so WebView2 too) animates it over
+  //     several frames at ~12-25px each, and a trackpad delivers finer steps still.
+  //     Any tolerance generous enough to survive the caret drifting between frames is
+  //     also generous enough that a partly-delivered notch still measures "at the
+  //     tail" — so the next insert scrolls straight back and the notch nets to zero.
+  //   • Geometry can only be sampled AFTER the fact, so one long frame (GC, a big
+  //     live-preview rebuild) that inserts a burst of text pushes the tail off screen
+  //     by itself and reads as "the reader left", with no way back.
+  //
+  // wheel/touchmove/keydown are never synthesised by a programmatic scroll, so they
+  // identify the reader unambiguously — no is-this-ours flag to get out of sync.
+  // Re-arming is the mirror trick: while we are NOT following we never scroll the view
+  // ourselves, so in that state every "scroll" event is by definition the reader's, and
+  // it is safe to consult geometry there to notice they have come back to the tail.
+  private watchReader(): void {
+    const { scrollDOM, contentDOM } = this.view;
+    // Any deliberate scroll gesture hands control over. Direction is not tested: a
+    // downward gesture immediately re-arms below if it lands at the tail, so treating
+    // every gesture the same costs nothing and keeps this branch-free.
+    const release = () => {
+      this.following = false;
+    };
+    const rearm = () => {
+      if (!this.following && this.atTail()) this.following = true;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (NAV_KEYS.has(e.key)) release();
+    };
+
+    scrollDOM.addEventListener("wheel", release, { passive: true });
+    scrollDOM.addEventListener("touchmove", release, { passive: true });
+    scrollDOM.addEventListener("scroll", rearm, { passive: true });
+    contentDOM.addEventListener("keydown", onKey);
+    this.unwatch = () => {
+      scrollDOM.removeEventListener("wheel", release);
+      scrollDOM.removeEventListener("touchmove", release);
+      scrollDOM.removeEventListener("scroll", rearm);
+      contentDOM.removeEventListener("keydown", onKey);
+    };
+  }
+
+  // Detach the reader listeners. Idempotent, and called on BOTH exits — stop() and the
+  // natural end of the stream — because a Typewriter is created per ask and would
+  // otherwise leave four listeners on the view for the life of the session.
+  dispose(): void {
+    this.unwatch?.();
+    this.unwatch = null;
+  }
+
+  // Is the tail of the answer back on screen? Only ever asked while not following, to
+  // decide whether the reader has scrolled back down to it. The slack comes from the
+  // view's measured line height — the editor font is user-configurable, so no pixel
+  // figure would hold. (Distance-to-bottom of the scroller would be the obvious test
+  // and is wrong here: .cm-content carries a 40vh scroll-past-end pad, so the last
+  // line sits well above the scroller's own bottom even when fully scrolled.)
+  private atTail(): boolean {
+    // insertAt is not mapped through edits the user makes mid-stream, so it can outrun
+    // a shortened doc; coordsAtPos would throw rather than return null.
+    const pos = Math.min(this.insertAt, this.view.state.doc.length);
+    const caret = this.view.coordsAtPos(pos);
+    if (!caret) return false; // outside CM's rendered viewport — still far away
+    const box = this.view.scrollDOM.getBoundingClientRect();
+    const slack = this.view.defaultLineHeight * 2;
+    return caret.bottom >= box.top && caret.top <= box.bottom + slack;
+  }
 
   // One mark per fresh range, each with a STABLE id attribute so CM keeps its span
   // (the CSS fade plays once) and adjacent ranges don't merge into one.

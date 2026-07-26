@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "test:graph": "tsx src/graph/__tests__/graphData.test.mts && tsx src/graph/__tests__/physics.test.mts && tsx src/graph/__tests__/physicsWasm.test.mts",
     "test:theme": "tsx src/theme/__tests__/contrast.test.mts",
-    "test": "npm run test:graph && npm run test:theme",
+    "test:ai": "tsx src/ai/__tests__/selectionAnchor.test.mts",
+    "test": "npm run test:graph && npm run test:theme && npm run test:ai",
     "asbuild": "asc assembly/physics.ts --target release && node scripts/embed-wasm.cjs"
   },
   "dependencies": {
@@ -26,7 +27,9 @@
     "@pixi/canvas-renderer": "^7.4.3",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-opener": "^2",
     "@types/katex": "^0.16.8",
     "codemirror": "^6.0.2",
     "d3-force": "^3.0.0",

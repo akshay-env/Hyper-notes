@@ -3,6 +3,17 @@
 // CSS paints one hairline per level via a repeating gradient sized by the
 // measured space width (the editor font is proportional, so it's measured, not
 // assumed).
+//
+// NOTE: nothing in the app styles .cm-list-guides today, so these decorations
+// currently paint nothing — they carry --guide-w/--guide-unit for a rule that was
+// never written. Left as-is deliberately: whether the guides should show at all is
+// a design call, not part of the hanging-indent fix. Whoever writes that rule must
+// paint from the BORDER box (background-origin: border-box), because listIndent.ts
+// decorates these same lines with .cm-hang and its padding-left would otherwise
+// shove the whole gradient right by the width of the list marker. The two
+// decorations coexist safely as long as they keep contributing different CSS
+// properties — CM concatenates the style attributes, so a second padding-left here
+// would silently fight the hanging indent.
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 
 const INDENT_CHARS = 2; // markdown list nesting unit (tab counts as one unit)

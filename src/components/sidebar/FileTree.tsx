@@ -15,7 +15,6 @@ import { TreeChevron, TrashIcon, DocIcon, FolderIcon } from "../icons/Icons";
 import { type VaultNode } from "../../state/vaultTypes";
 import { vaultTree, toggleExpand, countItems, getNode } from "../../state/vault";
 import {
-  activeNotePath,
   selectNoteByPath,
   createNoteIn,
   openNewFolder,
@@ -67,11 +66,17 @@ function flattenVisible(nodes: VaultNode[]): string[] {
 // scoped) row click handler can build Shift ranges against the filtered view.
 let visibleOrder: () => string[] = () => [];
 
-// Context-menu state (module-scoped so any row can open it).
+// Context-menu state (module-scoped so any row can open it). `paths` freezes the
+// selection at OPEN time (set in onContextMenu) — multi() reads this instead of
+// the live treeSelection(), because several interactions happen between the menu
+// opening and an item being chosen; if a click or a Ctrl/Shift toggle in between
+// shrank the selection, a live read would make Delete act on fewer items than
+// what's actually highlighted on screen.
 interface CtxMenu {
   x: number;
   y: number;
   node: VaultNode;
+  paths: string[];
 }
 const [ctxMenu, setCtxMenu] = createSignal<CtxMenu | null>(null);
 
@@ -117,7 +122,9 @@ const TreeRow: Component<{ node: VaultNode; depth: number }> = (props) => {
       setMounted(false);
     }
   };
-  const selected = () => !props.node.isFolder && activeNotePath() === props.node.path;
+  // Deliberately NO "open in the active tab" state here — the row a note is
+  // open in used to light up on its own, which read as phantom selection. The
+  // only highlighted rows are the ones the user actually clicked (picked).
   const picked = () => treeSelection().has(props.node.path);
   const label = () =>
     props.node.isFolder ? props.node.name : props.node.name.replace(/\.md$/i, "");
@@ -148,7 +155,8 @@ const TreeRow: Component<{ node: VaultNode; depth: number }> = (props) => {
     e.preventDefault();
     // Right-clicking outside the current selection retargets it (Explorer-style).
     if (!treeSelection().has(props.node.path)) treeSelectOnly(props.node.path);
-    setCtxMenu({ x: e.clientX, y: e.clientY, node: props.node });
+    // Snapshot the selection now — see the CtxMenu.paths comment above.
+    setCtxMenu({ x: e.clientX, y: e.clientY, node: props.node, paths: [...treeSelection()] });
   };
 
   // Where a drop on THIS row lands: into a folder, or into a note's own folder.
@@ -195,8 +203,8 @@ const TreeRow: Component<{ node: VaultNode; depth: number }> = (props) => {
   return (
     <>
       <div
-        class={`tree-row ${props.node.isFolder ? "folder" : ""} ${selected() ? "selected" : ""} ${picked() ? "picked" : ""} ${dropInto() ? "drop-into" : ""}`}
-        style={{ "padding-left": `${4 + props.depth * 14}px` }}
+        class={`tree-row ${props.node.isFolder ? "folder" : ""} ${picked() ? "picked" : ""} ${dropInto() ? "drop-into" : ""}`}
+        style={{ "padding-left": `${props.depth * 14}px` }}
         draggable={true}
         onClick={onClick}
         onContextMenu={onContextMenu}
@@ -205,11 +213,18 @@ const TreeRow: Component<{ node: VaultNode; depth: number }> = (props) => {
         onDrop={onDrop}
         onDragEnd={endDrag}
       >
+        {/* Guides sit under each ancestor level's chevron centre (i·14 + 7). */}
         <For each={Array.from({ length: props.depth })}>
-          {(_, i) => <div class="tree-depth-line" style={{ left: `${13 + i() * 14}px` }} />}
+          {(_, i) => <div class="tree-depth-line" style={{ left: `${i() * 14 + 7}px` }} />}
         </For>
 
-        <Show when={props.node.isFolder} fallback={<span class="tree-row__gap" />}>
+        {/* Every row reserves the chevron slot so sibling labels share one x
+            (VS Code / Obsidian style); the chevron fills it only on folders —
+            notes render an empty spacer with the same 14px box. */}
+        <Show
+          when={props.node.isFolder}
+          fallback={<span class="tree-chevron tree-chevron--spacer" />}
+        >
           <span class={`tree-chevron ${expanded() ? "expanded" : ""}`}>
             <TreeChevron />
           </span>
@@ -264,8 +279,10 @@ const ContextMenu: Component<{ onClose: () => void }> = (props) => {
   const multi = () => {
     const n = node();
     if (!n) return null;
-    const sel = treeSelection();
-    return sel.has(n.path) && sel.size > 1 ? [...sel] : null;
+    // held()?.paths is the selection as it was when the menu opened, not
+    // whatever treeSelection() is right now — see the CtxMenu.paths comment.
+    const paths = held()?.paths ?? [];
+    return paths.includes(n.path) && paths.length > 1 ? paths : null;
   };
   const run = (fn: () => void) => () => {
     fn();

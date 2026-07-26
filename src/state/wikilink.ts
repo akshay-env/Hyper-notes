@@ -146,9 +146,16 @@ export function cancelAddNote() {
   setAddNoteLink(null);
 }
 
-// Append `name` as a target of the link at the stored range and ensure the note
-// exists. Skips the insert if it's already a target (no duplicate targets); only
-// creates a file when nothing resolves to that name yet.
+// Append `name` as another target of the link at the stored range and ensure the
+// note exists. A multi-target link renders ONLY its first segment as the label, so
+// appending a target changes nothing on screen — to make the action visibly do
+// something, the caret is dropped INSIDE the link (just before the closing "]]")
+// and the editor refocused, which reveals the raw [[a | b | name]] under it. That
+// reveal IS the feedback. Skips the insert if `name` is already a target (no
+// duplicate targets) but still reveals the link. The stored range was captured when
+// the menu opened, so it is validated first: if the doc has changed underneath and
+// the range no longer points at a [[ … ]], the note is created WITHOUT writing at
+// the stale offset.
 export function confirmAddNote(rawName: string) {
   const target = addNoteLink();
   setAddNoteLink(null);
@@ -158,17 +165,50 @@ export function confirmAddNote(rawName: string) {
   const view = editorView();
   if (!target || !name || !view) return;
 
-  const inner = view.state.sliceDoc(target.from + 2, target.to - 2);
-  const want = titleKey(normalizeTarget(name));
-  const already = parseWikilinkInner(inner).targets.some(
-    (t) => titleKey(normalizeTarget(t)) === want,
-  );
-  if (!already) {
-    view.dispatch({
-      changes: { from: target.to - 2, insert: ` | ${name}` },
-      userEvent: "input.wikilink",
-    });
+  // The range is from when the menu opened; the document may have changed since.
+  // Clamp it to the current length and re-confirm the slice is still a [[ … ]]
+  // before writing — inserting at a stale offset would splice " | name" into
+  // unrelated text.
+  const docLen = view.state.doc.length;
+  const from = Math.max(0, Math.min(target.from, docLen));
+  const to = Math.max(from, Math.min(target.to, docLen));
+  const isLink =
+    to - from >= 4 &&
+    view.state.sliceDoc(from, from + 2) === "[[" &&
+    view.state.sliceDoc(to - 2, to) === "]]";
+
+  if (isLink) {
+    const inner = view.state.sliceDoc(from + 2, to - 2);
+    const want = titleKey(normalizeTarget(name));
+    const already = parseWikilinkInner(inner).targets.some(
+      (t) => titleKey(normalizeTarget(t)) === want,
+    );
+    if (!already) {
+      // Insert the new target and, in the SAME transaction, land the caret just
+      // after the inserted name (immediately before the closing "]]"). The caret
+      // inside the link is what makes the live preview reveal the raw markdown —
+      // the rendered label never changes for a multi-target link, so without this
+      // the edit would be invisible and the click would look like it did nothing.
+      const insert = ` | ${name}`;
+      view.dispatch({
+        changes: { from: to - 2, insert },
+        selection: { anchor: to - 2 + insert.length },
+        userEvent: "input.wikilink",
+      });
+    } else {
+      // Already a target: nothing to insert, but still drop the caret inside the
+      // link so the user sees its existing targets rather than getting no response.
+      view.dispatch({ selection: { anchor: to - 2 } });
+    }
+    // Live preview only reveals raw markdown while the editor HAS focus, and the
+    // reveal is the whole point here. The AddNote dialog (Ark) restores focus on
+    // close, and that restore runs after this handler — so focus on the next frame
+    // to land past it, the same way the editor's context-menu actions do.
+    requestAnimationFrame(() => view.focus());
   }
+  // else: the stored range no longer points at a [[ … ]] — skip the insert (a
+  // stale offset would corrupt unrelated text) and just create the named note.
+
   if (!findPathByTitle(vaultTree, name)) {
     const base = normalizeTarget(name).split("/").pop()?.trim() ?? "";
     if (base) createNoteIn(activeNoteFolder(), base, false); // create, don't leave the note

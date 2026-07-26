@@ -65,6 +65,7 @@ const EditorToolbar: Component = () => {
         <button
           class={`etool ${noteSearchOpen() ? "active" : ""}`}
           title="Find in note"
+          data-find-toggle
           onClick={() => setNoteSearchOpen(!noteSearchOpen())}
         >
           <FindIcon size={15} />

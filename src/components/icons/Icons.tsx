@@ -68,9 +68,15 @@ export const SearchIcon: Component<IconProps> = (p) =>
     </>
   ), p);
 
-// Down chevron (SidebarHeader vault switcher).
+// Up+down double chevron (vault switcher) — the standard "this is a picker"
+// glyph, one chevron pointing each way.
 export const VaultChevron: Component<IconProps> = (p) =>
-  base(12, 12, <polyline points="2.5,4.5 6,8 9.5,4.5" />, p);
+  base(12, 12, (
+    <>
+      <polyline points="3,4.7 6,1.7 9,4.7" />
+      <polyline points="3,7.3 6,10.3 9,7.3" />
+    </>
+  ), p);
 
 // Right-pointing chevron (file-tree folder toggle; rotate 90° via CSS when open).
 export const TreeChevron: Component<IconProps> = (p) =>

@@ -30,22 +30,36 @@ export interface RestoreResult {
 
 export const readVaultFs = (root: string) => invoke<VaultData>("read_vault", { root });
 export const readFileFs = (root: string, rel: string) => invoke<string>("read_file", { root, rel });
+// Every mutating command below read-modify-writes vault files (.bin/index.json, a
+// note, a path). Tauri dispatches commands concurrently onto Rust's blocking pool,
+// so two in flight at once lose each other's work: N deletes all read the same
+// .bin index and the last write wins, and a note flushed while it is being binned
+// or renamed gets re-created at its old path. One FIFO chain = one writer at a
+// time. Reads stay unqueued. `then(fn, fn)` runs the next op whether the previous
+// one resolved or rejected, so a single failure can't stall the chain forever.
+let writeChain: Promise<unknown> = Promise.resolve();
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  const next = writeChain.then(fn, fn);
+  writeChain = next.catch(() => {});
+  return next;
+}
+
 export const writeNoteFs = (root: string, rel: string, content: string) =>
-  invoke<void>("write_note", { root, rel, content });
+  enqueue(() => invoke<void>("write_note", { root, rel, content }));
 export const createFolderFs = (root: string, rel: string) =>
-  invoke<void>("create_folder", { root, rel });
+  enqueue(() => invoke<void>("create_folder", { root, rel }));
 export const createNoteFs = (root: string, rel: string, content: string) =>
-  invoke<void>("create_note", { root, rel, content });
+  enqueue(() => invoke<void>("create_note", { root, rel, content }));
 export const renamePathFs = (root: string, oldRel: string, newRel: string) =>
-  invoke<void>("rename_path", { root, oldRel, newRel });
+  enqueue(() => invoke<void>("rename_path", { root, oldRel, newRel }));
 export const moveToBinFs = (root: string, rel: string, id: string) =>
-  invoke<RawBinEntry>("move_to_bin", { root, rel, id });
+  enqueue(() => invoke<RawBinEntry>("move_to_bin", { root, rel, id }));
 export const listBinFs = (root: string) => invoke<RawBinEntry[]>("list_bin", { root });
 export const restoreBinFs = (root: string, id: string) =>
-  invoke<RestoreResult>("restore_bin", { root, id });
+  enqueue(() => invoke<RestoreResult>("restore_bin", { root, id }));
 export const deleteBinFs = (root: string, id: string) =>
-  invoke<void>("delete_bin", { root, id });
-export const emptyBinFs = (root: string) => invoke<void>("empty_bin", { root });
+  enqueue(() => invoke<void>("delete_bin", { root, id }));
+export const emptyBinFs = (root: string) => enqueue(() => invoke<void>("empty_bin", { root }));
 
 // Rust Node → the frontend VaultNode (same shape; normalize files' children).
 export function rawToVaultNode(n: RawNode): VaultNode {

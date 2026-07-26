@@ -59,9 +59,11 @@
   display: flex;
   justify-content: flex-end;
 }
-/* No width transition while dragging a handle — the edge must track the pointer. */
+/* No width transition while dragging a handle — the edge must track the pointer.
+   The editor scroller's centring pads (editorTheme.ts) follow the same rule. */
 .app.is-resizing .sidebar-dock,
-.app.is-resizing .right-panel-dock {
+.app.is-resizing .right-panel-dock,
+.app.is-resizing .cm-scroller {
   transition: none;
 }
 .app.is-resizing {
@@ -152,7 +154,9 @@
 }
 
 /* Outline (Outline.qml, 26px rows) */
-.outline {
+/* Named to dodge Tailwind's own .outline utility, which the on-demand scanner
+   emits because this class name appears in source. */
+.outline-list {
   display: flex;
   flex-direction: column;
 }
@@ -320,7 +324,10 @@
   color: var(--text);
 }
 
-/* ---------- Vault selection overlay (VaultSelectionOverlay.qml) ---------- */
+/* ---------- Vault gate (shown until a vault is open) ----------
+   The app renders this INSTEAD of the shell while no vault is open, so it also
+   has to carry the window chrome: with decorations:false the three controls in
+   __bar are the only way to move, maximise or close the window. */
 .vault-overlay {
   position: absolute;
   inset: 0;
@@ -333,6 +340,31 @@
   gap: 20px;
   padding: 0 24px;
   text-align: center;
+}
+/* Matches .topbar's 38px so the gate and the app agree on window-chrome height. */
+.vault-overlay__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+}
+.vault-overlay__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Reuses .folder-input's metrics (the app's 34px field) at dialog width. */
+.vault-overlay__name {
+  width: 280px;
+}
+.vault-overlay__error {
+  font-size: 12.5px;
+  line-height: var(--lh-body);
+  color: var(--danger);
 }
 .vault-overlay__title {
   font-family: var(--font-display);
@@ -605,12 +637,12 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* The selected phrase inside "Create note “…”" */
+/* The selected phrase inside a row that quotes the selection. */
 .editor-context-item__title {
   color: var(--accent-text);
   font-weight: 600;
 }
-/* Small format glyph (B / I / H) aligned like the row's icon slot. */
+/* Small format glyph aligned like the row's icon slot. */
 .ctx-fmt {
   width: 13px;
   min-width: 13px;
@@ -619,16 +651,17 @@
   line-height: 1;
   color: var(--text-muted);
 }
-.ctx-fmt--bold {
-  font-weight: 800;
-}
-.ctx-fmt--italic {
-  font-style: italic;
-  font-family: Georgia, "Times New Roman", serif;
-}
 .ctx-fmt--mark {
   font-weight: 700;
   color: var(--accent-text);
+}
+/* Keyboard hint parked at the right edge of a menu row (e.g. Ask AI). */
+.ctx-shortcut {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
 }
 /* Link menu (right-click a wikilink) reuses the .wikilink-menu__* rows, which
    size to the container — give it a sensible width instead of the 220px phrase rows. */
@@ -2255,6 +2288,36 @@
   color: var(--text-dim);
 }
 
+/* multi-target hover card → one row per target; hovering a row reveals that
+   note's preview beneath it (WikilinkHoverCard). Rows carry their own padding so
+   they sit off the card edge without a wrapper. */
+.wikilink-card__target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12.5px;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.wikilink-card__target.is-active,
+.wikilink-card__target:hover {
+  background: var(--overlay-hover);
+}
+.wikilink-card__target-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wikilink-card__target-preview {
+  margin-bottom: 4px;
+  padding: 6px 8px 0;
+  border-top: 1px solid var(--divider);
+}
+
 /* multi-target → open menu */
 .wikilink-menu__header {
   font-size: 11px;
@@ -2329,14 +2392,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  /* Left padding = --gutter so the word count starts on the sidebar's shared
+     alignment line (toggle glyph, New note, search, tree labels, vault name). */
+  padding: 0 12px 0 var(--gutter);
   color: var(--text-muted);
   font-size: 11px;
 }
 .statusbar__left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   color: var(--text-muted);
 }
 .statusbar__path {
@@ -2348,9 +2413,9 @@
 }
 
 /* ---------- Tabs (rendered inside .topbar__tabs) ----------
-   Flat document tabs, native-style: the strip is one quiet band, the active tab
-   is marked by label emphasis plus a short accent bar UNDER the label (WinUI
-   selection indicator) — not a browser-style notch into the editor. */
+   Browser-style notch: the active tab shares the editor's background and
+   overflows 1px down over the topbar's bottom border, so it reads as fused to
+   the pane it opens rather than as a separate control sitting above it. */
 .tab {
   position: absolute;
   top: 0;
@@ -2371,6 +2436,27 @@
     transform var(--dur-2) var(--ease-out),
     width var(--dur-2) var(--ease-out);
   touch-action: none;
+}
+/* Hairline between adjacent tabs so one doesn't visually bleed into the next.
+   Suppressed on the first tab (nothing to its left), the active tab and the
+   tab right after it (a line butting the notch reads as a glitch), a held
+   (dragging) tab, and an overlapping tab (its own seam shadow already does this). */
+.tab::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 14px;
+  background: var(--divider);
+}
+.tab--first::before,
+.tab.active::before,
+.tab--after-active::before,
+.tab--held::before,
+.tab--overlap::before {
+  display: none;
 }
 .tab:hover:not(.active) {
   background: var(--overlay-hover);
@@ -2425,29 +2511,22 @@
 .tab--overlap:hover .tab__label {
   max-width: none;
 }
-/* Active tab: flat — a whisper of fill so the slot reads as "held down", the
-   label at full strength, and a short accent bar under it. No notch, no border:
-   the strip stays one solid piece of chrome. */
+/* Active tab: the same surface as the editor below it, so the tab and the pane
+   it opens read as one continuous piece of chrome — no accent bar, no seam.
+   height + border-color cover the topbar's 1px bottom border (permitted by
+   .topbar__tabs's clip-path); only the top corners round, since the bottom
+   edge butts straight into the editor with no border of its own. */
 .tab.active {
-  background: var(--overlay-hover);
+  background: var(--bg);
+  height: calc(100% + 1px);
+  border-color: var(--border) var(--border) transparent;
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
 }
 /* An overlapping tab that's active or hovered lifts clear of the cascade, so it
    loses the seam shadow and shows in full. */
 .tab--overlap.active,
 .tab--overlap:hover {
   box-shadow: none;
-}
-.tab.active::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 10px;
-  right: 10px;
-  height: 2px;
-  /* accent-text, not accent: this 2px bar is painted on the page, so on a pale
-     accent the raw fill would be invisible. accent-text carries the contrast floor. */
-  background: var(--accent-text);
-  border-radius: 1px 1px 0 0;
 }
 .tab__label {
   flex: 1;
@@ -2601,12 +2680,15 @@
 .editor-host .cm-editor {
   height: 100%;
 }
-/* The readable column is always centred (see editorTheme.ts) so it glides with the
-   sidebar's width animation — no left-align↔centre snap when the dock collapses. */
+/* The readable column is centred on the WINDOW, not the pane: .main carries
+   --center-pad-l/r (App.tsx) and editorTheme.ts pads the scroller by the dock
+   width difference, animated in step with the dock transitions — the text
+   column holds one fixed centre through every dock open/close/resize. */
 
 /* ---------- Title bar (TitleBar.qml, height 32) ---------- */
 /* Row 1 = the integrated tab bar. Its bottom border is the editor pane's TOP
-   edge, which the active tab notches through (see .tab.active). */
+   edge; the active tab notches through it and shares the editor's background,
+   so the two read as one continuous surface (see .tab.active). */
 .topbar {
   height: 38px;
   min-height: 38px;
@@ -2671,6 +2753,7 @@
 
 /* Sidebar toggle button (SidebarToggleButton.qml, 28x24) */
 .sidebar-toggle {
+  flex: 0 0 auto; /* never let a tight flex cell squeeze the button */
   width: 28px;
   height: 24px;
   border-radius: var(--r-xs);
@@ -2680,11 +2763,14 @@
   justify-content: center;
   transition: background var(--dur-1) var(--ease-out);
 }
-/* In the title bar the gutter is provided by .topbar__left's padding, so drop the
-   button's own left margin — otherwise the toggle sits 2px right of the New note
-   button. (The right-panel toggle in the editor toolbar keeps its margin.) */
+/* In the title bar, align the GLYPH (not the button box) with the --gutter line:
+   the 16px icon sits centred in the 28px button, i.e. 6px in — pull the button
+   6px left so the visible icon starts exactly where the New note button, search
+   field, tree labels and word count all start. The hover box bleeding a little
+   into the gutter is standard optical alignment. (The right-panel toggle in the
+   editor toolbar keeps its margin.) */
 .topbar__left .sidebar-toggle {
-  margin-left: 0;
+  margin-left: -6px;
 }
 .sidebar-toggle:hover {
   background: var(--overlay-hover);
@@ -2919,22 +3005,14 @@
 .tree-row:hover {
   background: var(--overlay-hover);
 }
-.tree-row.selected {
-  background: var(--accent-soft);
-}
-/* Multi-select membership (Ctrl/Shift+click) — outlined so it reads apart from
-   the active-note highlight even when both apply. */
+/* NOTE: there is deliberately no "open in the active tab" row state — the only
+   highlight is .picked, the selection the user actually made by clicking. */
 .tree-row.picked {
   background: var(--overlay-hover);
   box-shadow: inset 0 0 0 1px var(--accent-soft);
 }
 .tree-row.picked .tree-row__label {
   color: var(--text);
-}
-.tree-row__gap {
-  width: 18px;
-  min-width: 18px;
-  margin-right: 6px;
 }
 .tree-row__label {
   font-size: 13px;
@@ -2947,14 +3025,13 @@
 .tree-row.folder .tree-row__label {
   color: var(--text);
 }
-.tree-row.selected .tree-row__label {
-  color: var(--text);
-}
+/* Every row reserves this 14px slot (notes render it as an empty spacer, see
+   FileTree.tsx) so sibling labels at one depth start at the same x; only
+   folders draw the chevron inside it. */
 .tree-chevron {
-  width: 18px;
-  min-width: 18px;
+  width: 14px;
+  min-width: 14px;
   height: 32px;
-  margin-right: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3016,7 +3093,9 @@
   padding: 0 var(--gutter);
   border-top: 1px solid var(--divider);
 }
-/* Tools sit in the bottom-right corner, opposite the vault tile. */
+/* Tools sit in the bottom-right corner, opposite the vault tile. It keeps the
+   shared .dock-footer divider so the settings/bin line continues the vault
+   tile's line across the window. */
 .dock-footer--tools {
   justify-content: flex-end;
 }
@@ -3026,6 +3105,9 @@
 .vault-tile {
   flex: 1;
   min-width: 0;
+  /* Pull the tile left by its own text padding so the vault NAME sits on the
+     --gutter line with everything else; the hover box extends into the gutter. */
+  margin-left: -8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3084,11 +3166,14 @@
    reaches the left panel with the same gap. Because the container tracks the editor
    area, the open bar resizes live as either side panel is dragged. */
 .ask-bar {
-  --ask-gap: 22px;
+  --ask-gap: 12px; /* = --gutter, so the pill sits on the same rhythm as the docks */
   position: absolute;
   left: var(--ask-gap);
   right: var(--ask-gap);
-  bottom: 18px;
+  /* The collapsed pill is 30px (= --hit) in a 46px footer band (--footer-h):
+     (46 − 30) / 2 = 8px lands its centre on the vault tile / settings row.
+     The OPEN bar shares that 30px band at one line, growing upward from it. */
+  bottom: 8px;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -3099,13 +3184,25 @@
 .ask-wrap {
   pointer-events: auto;
   display: flex;
-  align-items: center;
+  /* flex-end (not center): once the textarea grows past one line it must grow
+     UPWARD off a bottom-anchored row, so the lead glyph/globe/Ask button stay
+     pinned to the bottom instead of drifting to the row's vertical middle. Each
+     of those three reproduces one-line centring via its own margin-bottom
+     (see .ask-lead/.ask-go/.ask-globe below) rather than via this align-items. */
+  align-items: flex-end;
   justify-content: flex-end;
-  width: 74px; /* collapsed = just the compact gold Ask button */
+  width: 54px; /* collapsed = just the compact gold "Ask" button, no icon */
   overflow: hidden;
-  border-radius: var(--r-lg);
-  background: var(--accent);
-  border: 1px solid transparent;
+  /* --r-sm, not --r-lg: 12px read as a pill on a 30px-tall button; 6px reads
+     rectangular and matches the app's small-control radius. */
+  border-radius: var(--r-sm);
+  /* iOS-style frosted glass for the collapsed pill: mostly-opaque gold (82%) so
+     the "Ask" label stays readable over busy note text underneath, with just
+     enough transparency + blur to read as a material rather than a flat fill. */
+  background: color-mix(in srgb, var(--accent) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.25); /* glass edge; still 1px, geometry untouched */
   /* Flat. One diffuse token does the separating, and it adapts per mode. */
   box-shadow: var(--shadow-lift);
   transition:
@@ -3115,12 +3212,15 @@
     box-shadow var(--dur-2) var(--ease-out);
 }
 /* Open = a neutral input surface with a hairline, not a gold slab: the accent
-   collapses back into the small Ask button inside it. */
+   collapses back into the small Ask button inside it. The glass look is
+   collapsed-only — open resets to a plain solid surface. */
 .ask-wrap.is-open {
   width: 100%; /* extend to the left panel (container already leaves the gap) */
   background: var(--elevated);
   border-color: var(--border);
   box-shadow: var(--shadow-pop);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 /* Leading search glyph — hidden with the rest of the bar when collapsed, revealed
    at the far left when the bar extends. */
@@ -3138,24 +3238,37 @@
 }
 .ask-wrap.is-open .ask-lead {
   opacity: 1;
+  /* (28px one-line row − 18px glyph) / 2 = 5px: reproduces the old vertical
+     centring at one line, but as a bottom margin so it holds that position at
+     the row's bottom edge instead of re-centring as the textarea grows taller. */
+  margin-bottom: 5px;
 }
 .ask-input {
   flex: 1;
   min-width: 0;
-  height: 32px; /* collapsed pill height; grows when the bar opens */
+  height: 28px; /* collapsed pill inner height (30px with the border); grows open */
   background: transparent;
   border: none;
   outline: none;
+  resize: none; /* height is driven by AskBar.tsx's auto-grow, not a manual drag handle */
   color: var(--text);
   font-size: 14px;
+  line-height: 20px; /* auto-grow cap assumes this: 108px = 5 lines x 20px + 8px padding */
   font-family: var(--font);
   padding: 0 8px 0 10px;
   opacity: 0;
+  overflow-y: hidden; /* AskBar.tsx flips this to auto only once past the 5-line cap */
   transition: opacity var(--dur-2) var(--ease-out);
 }
 .ask-wrap.is-open .ask-input {
   opacity: 1;
-  height: 40px;
+  height: 28px; /* one line: 20px line-height + 4px top/bottom padding below —
+                   with the wrap's 1px borders the open bar = 30px outer, exactly
+                   the collapsed pill height. AskBar.tsx grows this via inline
+                   style up to the 108px/5-line cap, then switches overflow-y to
+                   auto for a small scrollbar. */
+  padding: 4px 8px 4px 10px; /* symmetric vertical padding so one line == 28px */
+  scrollbar-width: thin; /* Firefox; Chromium/WebView2 gets the global ::-webkit-scrollbar rules */
 }
 .ask-input::placeholder {
   color: var(--text-faint);
@@ -3165,8 +3278,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: 32px;
+  height: 28px;
   padding: 0 13px;
   border: none;
   background: transparent; /* the wrap IS the gold pill when collapsed */
@@ -3181,22 +3293,16 @@
 .ask-go:active {
   transform: scale(0.97); /* firm press-in, no bounce */
 }
-.ask-go__spark {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
-}
 .ask-wrap.is-open .ask-go {
-  height: 30px;
-  margin-right: 5px;
-  padding: 0 15px;
+  height: 24px;
+  margin-right: 2px;
+  /* (28px one-line row − 24px button) / 2 = 2px: reproduces one-line centring
+     as a bottom margin so the button holds the row's bottom edge as it grows. */
+  margin-bottom: 2px;
+  padding: 0 12px;
   border-radius: var(--r-md);
   background: var(--accent);
   box-shadow: var(--shadow-hair);
-}
-/* Once open, the button is a plain gold "Ask" — drop the sparkle. */
-.ask-wrap.is-open .ask-go__spark {
-  display: none;
 }
 .ask-wrap.is-open .ask-go:hover {
   background: var(--accent-hover);
@@ -3230,15 +3336,18 @@
 .ask-link:hover {
   text-decoration: underline;
 }
-/* "Use the internet" toggle inside the open Ask bar. */
+/* "Use the internet" toggle inside the open Ask bar (only ever rendered while
+   open, see the <Show> in AskBar.tsx — so its bottom-row centring math below
+   can assume the 28px one-line row unconditionally, no .is-open scoping needed). */
 .ask-globe {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   margin-right: 8px;
+  margin-bottom: 2px; /* (28px one-line row − 24px glyph) / 2 = 2px, see .ask-go above */
   border: none;
   border-radius: var(--r-md);
   background: transparent;
@@ -3249,8 +3358,8 @@
     color var(--dur-1) var(--ease-out);
 }
 .ask-globe svg {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
@@ -3288,4 +3397,117 @@
   height: 13px;
   fill: currentColor;
   flex: 0 0 auto;
+}
+
+/* ---------- Ask-AI selection popup (AskPopup.tsx — anchored at the asked-about
+   range) ---------- */
+/* Same surface recipe as .wikilink-card so anchored editor popups read as one
+   family: surface2 on a 1px border with the pop shadow. */
+.ask-pop {
+  z-index: 300;
+  width: 340px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  padding: 10px 12px;
+  outline: none;
+  transform-origin: var(--transform-origin);
+}
+/* One-line echo of the asked-about text so the card stays anchored to meaning
+   even after the selection highlight is gone. */
+.ask-pop__snippet {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.ask-pop__form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ask-pop__input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.ask-pop__input:focus {
+  border-color: var(--accent-text);
+}
+.ask-pop__input::placeholder {
+  color: var(--text-faint);
+}
+.ask-pop__go {
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: default;
+}
+.ask-pop__go:hover {
+  background: var(--accent-hover);
+}
+.ask-pop__q {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.ask-pop__status {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+  margin-bottom: 4px;
+}
+.ask-pop__a {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
+}
+/* Hint styled as the app's uppercase badge voice because it's chrome, not
+   content. */
+.ask-pop__hint {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--track-wide);
+  color: var(--text-faint);
+}
+.ask-pop__error {
+  font-size: 12px;
+  color: var(--danger);
+}
+.ask-pop__link {
+  font-size: 12px;
+  color: var(--accent-text);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: default;
+}
+.ask-pop__link:hover {
+  text-decoration: underline;
 }

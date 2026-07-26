@@ -16,8 +16,11 @@ import {
 import { flushEditor } from "../state/editor";
 import { minimizeWindow, toggleMaximizeWindow, closeWindow } from "../backend/window";
 
-// Left cell width when the sidebar is collapsed (keeps the toggle reachable).
-const COLLAPSED_LEFT = 46;
+// Left cell width when the sidebar is collapsed — the EXACT space the toggle
+// occupies so nothing squeezes: 12px gutter − 6px glyph-align margin + 28px
+// button + 8px right padding + 1px border. The button itself is flex-shrink:0,
+// so even a mis-measured cell can only clip, never deform it.
+const COLLAPSED_LEFT = 43;
 // Total width of the three window controls (3 × 46) — where the collapsed stub parks.
 const WINCTRLS_W = 138;
 

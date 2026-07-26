@@ -3,6 +3,7 @@
 // Inline content is HTML-escaped first, so the only markup ever injected is the
 // fixed set of tags below.
 import katex from "katex";
+import { isHex } from "../theme/colorEngine";
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
@@ -14,6 +15,49 @@ export function escapeHtml(s: string): string {
 // images/inline math). Wikilinks keep data-wikilink so the app-wide hover/click
 // handlers work inside rendered content too.
 export function renderInline(raw: string): string {
+  // Bare URL literals ("https://…", "www.…" — no [text](url) wrapper) are
+  // found and swapped for a null-byte placeholder BEFORE escapeHtml() and
+  // every pass below runs. Matching after escaping would also catch a
+  // "https://" hiding inside an already-&lt;…&gt;-escaped angle-bracket
+  // autolink, or inside the data-href="…" attribute the [text](url) pass
+  // below is about to write — either would corrupt the resulting markup.
+  // The lookbehind skips a match immediately after "](": that's an existing
+  // link/image destination, already owned by the passes below. Backtick is
+  // excluded from the match body (unlike @lezer/markdown's own autolinker,
+  // which never sees one — its tokenizer claims `code` before plain text is
+  // scanned) so a URL inside `inline code` doesn't eat the closing backtick.
+  // Inline-code spans are verbatim: a URL between backticks must stay literal
+  // text, the same way the CM parser's autolinker never runs inside a code
+  // span. The ranges are measured on the same raw string the URL scan below
+  // runs over (both happen before escapeHtml), so offset containment is exact.
+  const codeSpans: Array<[number, number]> = [];
+  for (const cm of raw.matchAll(/`[^`]+`/g)) {
+    codeSpans.push([cm.index, cm.index + cm[0].length]);
+  }
+  const bareUrls: string[] = [];
+  raw = raw.replace(/(?<!\]\()\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi, (m, offset: number) => {
+    if (codeSpans.some(([s, e]) => offset >= s && offset < e)) return m;
+    // Walk trailing sentence punctuation (and an unopened ")") off the match —
+    // the same trim @lezer/markdown's own bare-URL autolinker applies — so
+    // "see https://x.com." links to x.com, not x.com.
+    let end = m.length;
+    for (;;) {
+      const last = m[end - 1];
+      if (/[?!.,:*_~]/.test(last)) end--;
+      else if (
+        last === ")" &&
+        (m.slice(0, end).match(/\(/g)?.length ?? 0) < (m.slice(0, end).match(/\)/g)?.length ?? 0)
+      )
+        end--;
+      else break;
+    }
+    const url = m.slice(0, end);
+    const trailer = m.slice(end);
+    const href = /^www\./i.test(url) ? `https://${url}` : url;
+    bareUrls.push(`<span class="cm-link" data-href="${escapeHtml(href)}">${escapeHtml(url)}</span>`);
+    return `\0${bareUrls.length - 1}\0${trailer}`;
+  });
+
   let h = escapeHtml(raw);
   h = h.replace(/`([^`]+)`/g, (_m, c) => `<code class="cm-inline-code">${c}</code>`);
   // $$…$$ before single-$: display math, and keeps the inline rule from
@@ -41,12 +85,38 @@ export function renderInline(raw: string): string {
     const label = (inner.split("|")[0] || inner).replace(/[#^].*$/, "") || inner;
     return `<span class="cm-wikilink" data-wikilink="${inner}">${label}</span>`;
   });
-  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, t) => `<span class="cm-link">${t}</span>`);
+  // data-href (already HTML-escaped with the rest of the string) lets the click
+  // handlers open the link from rendered content too — table cells route it via
+  // the cell's own mousedown listener, editor content via externalLinkInteractions.
+  h = h.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (_m, t, u) => `<span class="cm-link" data-href="${u}">${t}</span>`,
+  );
   h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   h = h.replace(/__([^_]+)__/g, "<strong>$1</strong>");
   h = h.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   h = h.replace(/~~([^~]+)~~/g, '<span class="cm-strike">$1</span>');
   h = h.replace(/==([^=]+)==/g, '<span class="cm-highlight">$1</span>');
+  // <mark style="background:#hex">…</mark> — the colour-highlight encoding
+  // (editor/highlight.ts is the only place that writes either form). Matches
+  // the ESCAPED form since escapeHtml() already ran above, and — same rule as
+  // the live preview's version of this — only a hex that passes isHex is ever
+  // trusted into the `style` attribute; raw note text must never reach it.
+  // Placed after **bold**/*italic* so formatting nested inside a highlight
+  // (already converted to <strong>/<em> by the replacements above) still
+  // renders instead of being swallowed as plain text.
+  h = h.replace(
+    /&lt;mark(?:\s+style=&quot;background:\s*(#[0-9a-fA-F]{3,8})\s*;?&quot;)?&gt;([\s\S]*?)&lt;\/mark&gt;/g,
+    (_m, hex, inner) => {
+      const safeHex = hex && isHex(hex) ? hex : null;
+      return `<span class="cm-highlight"${safeHex ? ` style="background-color:${safeHex}"` : ""}>${inner}</span>`;
+    },
+  );
+  // Swap the bare-URL placeholders back in last, once everything around them
+  // is finished HTML — any earlier pass (bold/highlight/…) matching text
+  // inside the span this produces would be the same corruption this two-step
+  // dance exists to avoid.
+  h = h.replace(/\0(\d+)\0/g, (_m, i) => bareUrls[Number(i)]);
   return h;
 }
 

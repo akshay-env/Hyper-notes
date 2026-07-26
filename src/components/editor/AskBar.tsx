@@ -4,26 +4,52 @@
 // and the bar reaches toward the left panel, stopping with the same gap. Because the
 // bar spans the editor area, it resizes automatically as either side panel is
 // dragged. It collapses again on Esc, on the Ask button when empty, or on an outside
-// click while empty. Enter (or Ask with text) streams the answer into the note.
+// click while empty. Enter (or Ask with text) streams the answer into the note;
+// Shift+Enter inserts a newline instead — the textarea auto-grows up to 5 lines
+// (then scrolls) so a multi-line question stays readable while typing it.
 import { type Component, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import {
   askOpen,
   asking,
   askError,
-  askSelection,
   searchStatus,
   openAsk,
   closeAsk,
   stopAsk,
   submitAsk,
 } from "../../state/ai";
+import { openAskPopupAt } from "../../state/askPopup";
+import { editorView } from "../../state/editor";
 import { aiEnabled, webSearch, setWebSearch, webSearchSupported } from "../../state/settings";
 import { openSettings } from "../../state/ui";
 
 const AskBar: Component = () => {
   let rootRef: HTMLDivElement | undefined;
-  let inputRef: HTMLInputElement | undefined;
+  let inputRef: HTMLTextAreaElement | undefined;
   const [text, setText] = createSignal("");
+
+  // Auto-grow up to 5 lines (108px = 5 x 20px line-height + 8px vertical padding,
+  // see .ask-wrap.is-open .ask-input in chrome.css), then let the textarea's own
+  // scrollbar take over. Reset-then-measure (height:0, then scrollHeight) is the
+  // standard trick for reading a textarea's true content height regardless of
+  // whatever height it already had. An EMPTY textarea is never measured: the
+  // grow runs while the open-width transition is mid-flight, and at ~54px wide
+  // the PLACEHOLDER wraps to several lines — measuring then would lock the cap
+  // height into an empty bar. Clearing the inline height lets the CSS one-line
+  // 28px default govern until there's real text.
+  const growTextarea = () => {
+    const el = inputRef;
+    if (!el) return;
+    if (!el.value) {
+      el.style.height = "";
+      el.style.overflowY = "hidden";
+      return;
+    }
+    el.style.height = "0";
+    const needed = el.scrollHeight;
+    el.style.height = Math.min(needed, 108) + "px";
+    el.style.overflowY = needed > 108 ? "auto" : "hidden";
+  };
 
   const collapse = () => {
     closeAsk();
@@ -49,6 +75,9 @@ const AskBar: Component = () => {
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
+      // Shift+Enter inserts a newline (the browser's own default for a textarea —
+      // don't preventDefault); plain Enter submits, multi-line questions included.
+      if (e.shiftKey) return;
       e.preventDefault();
       onButton();
     } else if (e.key === "Escape") {
@@ -59,13 +88,62 @@ const AskBar: Component = () => {
   };
 
   createEffect(() => {
-    if (askOpen()) queueMicrotask(() => inputRef?.focus());
+    // Tracks text() too (not just askOpen()) so every keystroke — and every
+    // programmatic reset, e.g. setText("") after submitting — re-measures the
+    // grow height. Collapsing clears the inline height so the CSS's 28px
+    // collapsed rule (not a stale open-state height) governs again.
+    text();
+    if (askOpen()) {
+      queueMicrotask(() => {
+        inputRef?.focus();
+        growTextarea();
+      });
+    } else if (inputRef) {
+      inputRef.style.height = "";
+      inputRef.style.overflowY = "";
+    }
   });
 
   const onGlobalKey = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    // Ctrl/⌘+K toggles the bar. The !e.shiftKey guard keeps Ctrl/⌘+Shift+K out of
+    // this branch — that chord is CodeMirror's own defaultKeymap binding for
+    // deleteLine, and without the guard this document-level listener would
+    // preventDefault() it (and toggle the bar) before it ever reached the editor.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "k") {
       e.preventDefault();
       askOpen() ? collapse() : openAsk();
+      return;
+    }
+    // Ctrl/⌘+Shift+A — "ask AI about this selection". This can't live in the CM
+    // keymap (src/editor/createEditorState.ts) because that file can't import
+    // the popup's state module without closing the cycle createEditorState →
+    // state/askPopup → state/editor → createEditorState. AskBar already owns
+    // this document keydown listener, so handling it here adds zero new
+    // coupling — and AskBar is only mounted while a note is open (see the <Show>
+    // around <AskBar /> in App.tsx), which is exactly when the shortcut applies.
+    // With a selection it opens the anchored Ask popup at the selection's end
+    // (same as the right-click "Ask AI about this"); without one it opens this
+    // bar. Shift+K (the obvious pairing with the toggle above) is already
+    // CodeMirror's deleteLine, hence Shift+A — unbound across defaultKeymap,
+    // markdownKeymap, historyKeymap and completionKeymap.
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      const view = editorView();
+      const r = view?.state.selection.main;
+      if (view && r && !r.empty) {
+        const c = view.coordsAtPos(r.to);
+        if (c) {
+          openAskPopupAt(view.state.sliceDoc(r.from, r.to), r.from, r.to, {
+            x: c.left,
+            y: c.top,
+            width: 1,
+            height: c.bottom - c.top,
+          });
+          return;
+        }
+      }
+      openAsk();
+      return;
     }
   };
   // Click anywhere outside the bar while it's open + empty → minimise.
@@ -89,17 +167,12 @@ const AskBar: Component = () => {
           <circle cx="11" cy="11" r="7" />
           <path d="m20 20-3.6-3.6" />
         </svg>
-        <input
+        <textarea
           ref={inputRef}
           class="ask-input"
-          placeholder={
-            !aiEnabled()
-              ? "Add an API key in Settings"
-              : askSelection()
-                ? "Ask about the selected text…"
-                : "Ask about this note…"
-          }
+          placeholder={!aiEnabled() ? "Add an API key in Settings" : "Ask about this note…"}
           value={text()}
+          rows={1}
           spellcheck={false}
           disabled={asking()}
           tabindex={askOpen() ? 0 : -1}
@@ -132,10 +205,7 @@ const AskBar: Component = () => {
           when={asking()}
           fallback={
             <button class="ask-go" onClick={onButton} title="Ask AI  (⌘K)">
-              <svg class="ask-go__spark" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2.5l1.7 5.3a3 3 0 0 0 1.9 1.9l5.3 1.7-5.3 1.7a3 3 0 0 0-1.9 1.9L12 20.3l-1.7-5.3a3 3 0 0 0-1.9-1.9L3.1 11.4l5.3-1.7a3 3 0 0 0 1.9-1.9L12 2.5z" />
-              </svg>
-              <span class="ask-go__label">Ask</span>
+              Ask
             </button>
           }
         >
@@ -148,13 +218,8 @@ const AskBar: Component = () => {
       {/* Only errors + the "add a key" prompt surface here. The context we send
           the model (and its one-line summary) is deliberately NOT shown — the
           notebook context is for the AI's eyes only. */}
-      <Show
-        when={askOpen() && (askSelection() || askError() || searchStatus() !== null || !aiEnabled())}
-      >
+      <Show when={askOpen() && (askError() || searchStatus() !== null || !aiEnabled())}>
         <div class="ask-meta">
-          <Show when={askSelection()}>
-            <span class="ask-chip">Asking about selected text</span>
-          </Show>
           <Show when={searchStatus() !== null}>
             <span class="ask-chip">
               {searchStatus() ? `Searching the web: ${searchStatus()}` : "Searching the web…"}

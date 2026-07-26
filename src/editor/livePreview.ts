@@ -21,6 +21,7 @@ import { renderInline, renderMarkdownBlocks } from "./markdownRender";
 import { resolveNoteByTitle, wikilinkExists } from "../state/wikilink";
 import { parseWikilinkInner, wikilinkDisplaySpan } from "../graph/wikilinkParse";
 import { selectNoteByPath } from "../state/ui";
+import { isHex, readable } from "../theme/colorEngine";
 
 // ── Widgets ───────────────────────────────────────────────────────────────────
 class HRWidget extends WidgetType {
@@ -216,7 +217,8 @@ class TableWidget extends WidgetType {
       // Block widgets ignore editor events, so a plain click can't reach the
       // source — put the caret there ourselves (which re-reveals the raw table).
       el.addEventListener("mousedown", (e) => {
-        if ((e.target as HTMLElement).closest(".cm-wikilink")) return; // let it open
+        // Links keep their own behaviour: the CM-level handlers open them.
+        if ((e.target as HTMLElement).closest(".cm-wikilink, [data-href]")) return;
         e.preventDefault();
         view.dispatch({ selection: { anchor: Math.min(c.pos, view.state.doc.length) } });
         view.focus();
@@ -508,8 +510,15 @@ function buildInline(view: EditorView): { deco: DecorationSet; atomic: Decoratio
         const text = doc.sliceString(node.from, node.to);
         const close = text.indexOf("](");
         if (close > 0) {
+          // The URL travels on the rendered span (data-href) so a left-click can
+          // follow it (externalLinkInteractions) without the caret ever landing
+          // in the hidden "](url)" syntax. Strip an optional <…> wrapper and a
+          // trailing "title" — only the target itself is the href.
+          let url = text.slice(close + 2, -1).trim();
+          if (url.startsWith("<") && url.endsWith(">")) url = url.slice(1, -1);
+          url = url.split(/\s+/)[0] ?? "";
           hide(node.from, node.from + 1);
-          mark(node.from + 1, node.from + close, "cm-link");
+          mark(node.from + 1, node.from + close, "cm-link", url ? { "data-href": url } : undefined);
           hide(node.from + close, node.to);
         }
       } else if (name === "Wikilink") {
@@ -537,8 +546,35 @@ function buildInline(view: EditorView): { deco: DecorationSet; atomic: Decoratio
         if (!active(node.from, node.to)) mark(node.from, node.to, "cm-tag");
       } else if (name === "Autolink") {
         hide(node.from, node.from + 1);
-        mark(node.from + 1, node.to - 1, "cm-link");
+        mark(node.from + 1, node.to - 1, "cm-link", {
+          "data-href": doc.sliceString(node.from + 1, node.to - 1),
+        });
         hide(node.to - 1, node.to);
+      } else if (name === "URL") {
+        // GFM's autolink-literal extension (part of `GFM`, already active via
+        // `base: markdownLanguage` in createEditorState.ts) tokenizes a bare
+        // "https://…"/"www…"/email/"mailto:"/"xmpp:" match as a standalone URL
+        // node with NO wrapping element — unlike a `[label](url)` or `<url>`
+        // destination, which is ALSO a URL node but nested under Link/Image/
+        // Autolink. Those three are already fully decorated (destination
+        // hidden) by the branches above, so skip here — decorating the same
+        // range twice would double-mark it.
+        if (
+          node.matchContext(["Link"]) ||
+          node.matchContext(["Image"]) ||
+          node.matchContext(["Autolink"])
+        ) {
+          return undefined;
+        }
+        if (active(node.from, node.to)) return;
+        const text = doc.sliceString(node.from, node.to);
+        // mailto:/xmpp:/bare email addresses are left as plain text: openExternal
+        // only ever accepts ^https?://, so linkifying them would be a dead click.
+        if (/^https?:\/\//i.test(text)) {
+          mark(node.from, node.to, "cm-link", { "data-href": text });
+        } else if (/^www\./i.test(text)) {
+          mark(node.from, node.to, "cm-link", { "data-href": "https://" + text });
+        }
       } else if (name === "FencedCode") {
         mark(node.from, node.to, "cm-code-block");
         const first = doc.lineAt(node.from);
@@ -712,6 +748,31 @@ function scanInline(
   });
   run(/\$(?!\$)([^\n$]+?)\$/g, (m, s, e) => {
     if (!active(base + s, base + e)) widget(base + s, base + e, new MathWidget(m[1], false));
+  });
+  // <mark style="background:#hex">…</mark> — the colour-highlight encoding
+  // (editor/highlight.ts is the only place that WRITES either form). Runs
+  // immediately before the `==` rule below so the shared `consumed` tracker
+  // gives <mark> priority and the two can never overlap. Security: only a hex
+  // that passes isHex may ever reach the `style` attribute below — raw note
+  // text must never be interpolated into a style string.
+  //
+  // Unlike every other token, this one NEVER reveals its raw form on caret
+  // touch: the tag syntax is long enough that revealing it shoves the whole
+  // line around (the "ugly long syntax" complaint). The inner text stays a
+  // plain editable mark, and un-highlighting is the context menu's job
+  // (Highlight ▸ Remove highlight). Source mode still shows the raw tags.
+  run(/<mark(?:\s+style="[^"]*")?>([\s\S]*?)<\/mark>/g, (m, s, e) => {
+    const raw = /background:\s*(#[0-9a-fA-F]{3,8})/.exec(m[0])?.[1];
+    const hex = raw && isHex(raw) ? raw : null;
+    const openLen = m[0].length - m[1].length - 7; // "</mark>".length
+    hide(base + s, base + s + openLen);
+    mark(
+      base + s + openLen,
+      base + e - 7,
+      "cm-highlight",
+      hex ? { style: `background-color:${hex};color:${readable(hex)}` } : undefined,
+    );
+    hide(base + e - 7, base + e);
   });
   run(/==([^=]+)==/g, (_m, s, e) => {
     if (active(base + s, base + e)) return;

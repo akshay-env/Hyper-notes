@@ -9,7 +9,18 @@ import { createDoc, renameDoc, replaceDocs, rewriteLinksForRename } from "./docu
 import { moveToBin, loadBinEntries } from "./bin";
 import { flushEditor, reloadEditorDoc } from "./editor";
 import { isTauri } from "./platform";
-import { vaultRoot, setVaultRoot, setVaultName, baseName } from "./session";
+import {
+  vaultRoot,
+  setVaultRoot,
+  setVaultName,
+  baseName,
+  setVaultStatus,
+  lastVault,
+  rememberVault,
+  forgetVault,
+  scratchPreferred,
+  rememberScratch,
+} from "./session";
 import {
   readVaultFs,
   listBinFs,
@@ -112,6 +123,10 @@ const blankTab = (): Tab => ({ name: "New tab", path: "" });
 export const [openTabs, setOpenTabs] = createSignal<Tab[]>([blankTab()]);
 export const [activeTabIndex, setActiveTabIndex] = createSignal(0);
 export const [noteSearchOpen, setNoteSearchOpen] = createSignal(false);
+// A term to open the find bar WITH — set by the editor's "Search for …" menu item,
+// consumed (and cleared) by NoteSearchBar. Kept here rather than in the bar so the
+// producer doesn't have to reach into the component.
+export const [noteSearchSeed, setNoteSearchSeed] = createSignal("");
 
 // A blank "New tab": an empty slot to open into, and the app's un-closable resting
 // state. The graph tab also has no path, so it must be excluded explicitly —
@@ -431,7 +446,11 @@ export function confirmDelete() {
   clearTreeSelection();
 }
 
-// ── Vault open / load (Tauri) ─────────────────────────────────────────────────
+// ── Vault gate: boot / open / create / scratch ────────────────────────────────
+// Set on a failed vault load (boot-time auto-load, or a VaultGate action) so
+// the gate can show a friendly reason instead of an unhandled rejection.
+export const [vaultError, setVaultError] = createSignal<string | null>(null);
+
 // Prompt for a folder, then load it. No-op in the browser (no filesystem).
 export async function openVaultDialog() {
   if (!isTauri()) return;
@@ -442,11 +461,17 @@ export async function openVaultDialog() {
 
 // Read a real vault into the stores, replacing the mock seed.
 export async function loadVault(root: string) {
+  // readVaultFs goes FIRST and unguarded: a moved/deleted/unmounted folder
+  // rejects right here, before any state below is touched, so the caller
+  // (bootVault, or a VaultGate action) can recover cleanly instead of the app
+  // being left half-loaded onto a broken root.
   const data = await readVaultFs(root);
   replaceTree(data.tree.map(rawToVaultNode));
   replaceDocs(data.docs);
   setVaultRoot(root);
   setVaultName(baseName(root));
+  rememberVault(root); // next launch boots straight back into this vault
+  setVaultStatus("open"); // swaps VaultGate out for the real shell (App.tsx)
   setOpenTabs([blankTab()]); // always start with an empty tab, never zero
   setActiveTabIndex(0);
   try {
@@ -457,6 +482,65 @@ export async function loadVault(root: string) {
   // Warm the graph-layout cache (.hyperlink/graph.json) at startup, so the
   // FIRST graph open restores the saved layout with no initial shift.
   void loadGraphCache();
+}
+
+// Decide what the app boots into. Called once at startup (index.tsx), before
+// the first render, so vaultStatus is already past "booting" for every case
+// that resolves synchronously (browser preview; no remembered vault) — only a
+// real remembered-vault load leaves "booting" on screen long enough to show
+// VaultGate's bar-only loading state.
+export async function bootVault(): Promise<void> {
+  if (!isTauri()) {
+    // No filesystem in the dev preview, so there's no vault to remember — only
+    // the scratch choice. Preferred → skip the gate from here on, which is what
+    // keeps the design-measurement workflow's preview reachable in one click on
+    // a fresh profile and zero clicks on every launch after.
+    setVaultStatus(scratchPreferred() ? "open" : "none");
+    return;
+  }
+  const last = lastVault();
+  if (!last) {
+    setVaultStatus("none");
+    return;
+  }
+  try {
+    await loadVault(last);
+  } catch (e) {
+    // The remembered folder is gone/unmounted/renamed outside the app — forget
+    // it so we don't retry a dead path on every future launch, and let
+    // VaultGate explain why it's back.
+    console.error("boot vault:", e);
+    forgetVault();
+    setVaultError("That folder is no longer available.");
+    setVaultStatus("none");
+  }
+}
+
+// Create a brand-new vault: a folder named `name` under `parentDir` (chosen via
+// the OS folder picker in VaultGate), then loaded like any other vault. Reuses
+// createFolderFs rather than a dedicated Rust command — a vault is just a
+// folder, so "create a vault" is "create a folder" + the normal load.
+export async function createVaultAt(parentDir: string, name: string): Promise<void> {
+  // Strip characters illegal in Windows/macOS/Linux folder names; a blank or
+  // all-illegal name (e.g. "", "///") falls back rather than asking
+  // createFolderFs to create a nameless or unexpectedly-rooted folder.
+  const sanitised = name.replace(/[\\/:*?"<>|]/g, "").trim() || "My Vault";
+  await createFolderFs(parentDir, "/" + sanitised);
+  // Join with the PARENT's own separator, not the platform's: baseName() splits
+  // on [\\/] either way, and the Rust abs() helper joins with Path::join, which
+  // accepts either separator on Windows — so this is safe cross-platform.
+  const joined = parentDir.includes("\\") ? parentDir + "\\" + sanitised : parentDir + "/" + sanitised;
+  await loadVault(joined);
+}
+
+// "Continue without a folder": the dev-preview's escape hatch when there's no
+// real vault to open. Leaves vaultRoot null, which every filesystem side-effect
+// elsewhere already guards on (createNoteIn, renamePath, movePath, …), so the
+// app runs on the in-memory mock store exactly as it always has when no vault
+// is open.
+export function useScratchVault(): void {
+  rememberScratch();
+  setVaultStatus("open");
 }
 
 // ── Panel widths (resizable + persisted) ──────────────────────────────────────

@@ -1,9 +1,13 @@
-// Ask-AI orchestration (mirrors the Qt NoteEditor.submitAsk): build notebook
-// context, drop a "> question" blockquote at the cursor, then stream the model's
-// answer into the note beneath it. One request at a time; cancellable (Stop) and
-// self-cancelling if the user switches notes mid-stream. The request itself runs in
-// Rust — Stop cancels it by id rather than aborting a fetch in this process.
+// Ask-AI orchestration for the bottom Ask bar (mirrors the Qt NoteEditor
+// .submitAsk): build notebook context, drop a "> question" blockquote at the end
+// of the note, then stream the model's answer into the note beneath it. One
+// request at a time; cancellable (Stop) and self-cancelling if the user switches
+// notes mid-stream. The request itself runs in Rust — Stop cancels it by id
+// rather than aborting a fetch in this process. The selection-scoped "Ask AI
+// about this" flow lives in state/askPopup.ts — it streams into an anchored
+// popup, never into the note.
 import { createSignal } from "solid-js";
+import { EditorView } from "@codemirror/view";
 import { editorView, flushEditor } from "./editor";
 import { activeNotePath } from "./ui";
 import { llmProvider, llmKeyPresent, llmModel, llmBaseUrl, webSearchActive, aiTypingSpeed } from "./settings";
@@ -15,14 +19,6 @@ import { Typewriter } from "../ai/typewriter";
 export const [askOpen, setAskOpen] = createSignal(false);
 export const [asking, setAsking] = createSignal(false); // request in flight
 export const [askError, setAskError] = createSignal("");
-
-// The editor passage a selection-scoped ask targets (from the right-click "Ask AI
-// about this"). Null for an ordinary whole-note ask. Holds the text, the document
-// range (so the answer drops just below the highlight), and the note it came from
-// (so switching notes mid-ask can't apply a stale range to the wrong note).
-export const [askSelection, setAskSelection] = createSignal<
-  { text: string; from: number; to: number; path: string } | null
->(null);
 
 // Id of the in-flight Rust request, or null when idle. Stop cancels by this id.
 let activeRequestId: string | null = null;
@@ -42,15 +38,6 @@ export function openAsk() {
 }
 export function closeAsk() {
   setAskOpen(false);
-  setAskSelection(null);
-}
-
-// From the editor's right-click "Ask AI about this": remember the highlighted
-// range, then open the Ask bar so the next submit answers about just that text.
-export function startAskAboutSelection(text: string, from: number, to: number) {
-  setAskError("");
-  setAskSelection({ text, from, to, path: activeNotePath() });
-  setAskOpen(true);
 }
 export function stopAsk() {
   if (!activeRequestId) return;
@@ -76,23 +63,29 @@ export async function submitAsk(question: string): Promise<void> {
 
   setAskError("");
   const path = activeNotePath();
-  // Only honour the selection scope if it belongs to the note we're asking in —
-  // otherwise (the user switched notes with the bar open) fall back to a normal
-  // whole-note ask so the answer can't land at a stale offset in the wrong note.
-  const rawSel = askSelection();
-  const sel = rawSel && rawSel.path === path ? rawSel : null;
   // The notebook context is built for the model only — never surfaced in the UI.
-  const { text: context } = buildNotebookContext(path, view.state.doc.toString(), sel?.text);
+  const { text: context } = buildNotebookContext(path, view.state.doc.toString());
 
   // Drop the question as a blockquote on a fresh line; the answer streams below.
-  // For a selection ask, anchor to the end of the highlighted passage; otherwise
-  // to the current cursor line.
-  const insertPos = sel ? Math.min(sel.to, view.state.doc.length) : view.state.selection.main.head;
-  const line = view.state.doc.lineAt(insertPos);
+  // An ask always appends at the end of the note, so the conversation reads as
+  // a log at the bottom (not wherever the caret happened to be — which is
+  // offset 0 right after opening a note).
+  const doc = view.state.doc;
+  const line = doc.lineAt(doc.length);
   const anchor = line.to;
-  const lead = line.text.trim() === "" ? "" : "\n";
-  const block = `${lead}\n> ${q}\n\n`;
-  view.dispatch({ changes: { from: anchor, insert: block }, selection: { anchor: anchor + block.length } });
+  // Blank line between the note's existing text and the conversation, except in
+  // an empty note where a leading newline would just push everything down.
+  const lead = anchor === 0 ? "" : line.text.trim() === "" ? "\n" : "\n\n";
+  const block = `${lead}> ${q}\n\n`;
+  // The one deliberate scroll of an ask: the user just hit Ask, so take them to the
+  // conversation. Everything after this point follows the answer only while the reader
+  // stays at the tail (Typewriter.atTail) — scrolling up during the answer must never
+  // be undone, so nothing below re-scrolls.
+  view.dispatch({
+    changes: { from: anchor, insert: block },
+    selection: { anchor: anchor + block.length },
+    effects: EditorView.scrollIntoView(anchor + block.length, { y: "center" }),
+  });
   view.focus();
 
   // Reveal the streamed answer as smooth typing rather than in network bursts.
@@ -134,11 +127,13 @@ export async function submitAsk(question: string): Promise<void> {
     // run that finished on its own closes it.
     if (!cancelled) {
       if (activeNotePath() === path) {
+        // Trailing blank line so the next ask starts clean. No scrollIntoView: by the
+        // time the answer ends the reader may well have scrolled up into it, and a
+        // one-character edit at the very bottom is no reason to drag them back.
         const end = Math.min(typer.pos, view.state.doc.length);
         view.dispatch({ changes: { from: end, insert: "\n" } });
       }
       setAskOpen(false);
-      setAskSelection(null);
     }
     flushEditor();
   } catch (e) {
@@ -146,6 +141,10 @@ export async function submitAsk(question: string): Promise<void> {
     setAskError(shortError(e));
     flushEditor();
   } finally {
+    // Both exits, not just Stop: the typewriter listens on the view to tell the
+    // reader's scrolling from its own, and an ask that ends naturally never passes
+    // through stop(). Without this every question would leave its listeners behind.
+    typer.dispose();
     setAsking(false);
     setSearchStatus(null);
     activeRequestId = null;

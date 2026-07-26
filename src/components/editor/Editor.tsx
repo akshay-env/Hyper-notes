@@ -15,6 +15,7 @@ import {
   editorMode,
 } from "../../state/editor";
 import { activeNotePath, renameActiveNote } from "../../state/ui";
+import { captureAskMarks, syncAskMarks } from "../../state/askPopup";
 import { readDoc, createDoc } from "../../state/documents";
 
 // Filename (no extension) shown as the inline title; "" for a blank/graph tab.
@@ -50,14 +51,19 @@ const Editor: Component = () => {
     setEditorView(view);
     setLoadedPath(loaded);
     setEditorDoc(view.state.doc.toString());
+    syncAskMarks(view, loaded);
 
     // Swap documents when the active note changes; persist the outgoing buffer.
+    // Ask marks live in a StateField that setState discards, so they're
+    // harvested into their entries before each swap and reseeded after.
     createEffect(() => {
       const path = activeNotePath();
       if (path === loaded) return;
+      captureAskMarks(view!, loaded);
       flushEditor();
       loaded = path;
       load(path);
+      syncAskMarks(view!, path);
     });
 
     // Reflect mode changes (Live / Source / Reading) into the running editor.

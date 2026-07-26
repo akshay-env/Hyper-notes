@@ -7,7 +7,7 @@
 // colours that ignore the theme. Every colour here goes through the app's
 // tokens instead, so source mode re-themes with the palette like everything
 // else — and headings stop looking like hyperlinks.
-import { EditorView } from "@codemirror/view";
+import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
@@ -44,14 +44,51 @@ export const editorTheme = EditorView.theme(
       height: "100%",
       fontFamily: "var(--font)",
       fontSize: "16px",
+      // Geometry of the rendered list markers that is NOT type: the checkbox box
+      // and its gap, the extended-task marker's gap and type scale, and the
+      // blockquote rule + padding. Declared once here because listIndent.ts reads
+      // these back off the computed style to size a list line's hanging indent —
+      // a literal in the rules below and a literal in the plugin would drift the
+      // first time either is nudged.
+      "--cm-task-box": "15px",
+      "--cm-task-gap": "2px",
+      "--cm-task-alt-gap": "6px",
+      "--cm-task-alt-scale": "1.05",
+      "--cm-bq-border": "3px",
+      "--cm-bq-pad": "14px",
     },
     ".cm-scroller": {
       // Vertical scroll only. Line wrapping is on, so the editor never needs to
       // pan horizontally; wide tables / math scroll inside their own container.
       overflowX: "hidden",
       overflowY: "auto",
+      // "stable" only — NEVER "stable both-edges". CM anchors its drawn
+      // cursor/selection layers at scrollDOM.getBoundingClientRect().left (the
+      // BORDER-box edge), but the layers are position:absolute children that
+      // actually originate at the PADDING box; a LEFT gutter separates the two
+      // by the gutter width, so every caret/selection draws that many px right
+      // of the real text. Right-edge-only reservation keeps the two edges
+      // coincident; the paddingLeft calc() below (fed by scrollbarPadPlugin)
+      // re-centres the column that both-edges used to.
+      scrollbarGutter: "stable",
       lineHeight: "1.7",
       fontFamily: "var(--font)",
+      // Window-centred column: App.tsx sets these vars to the dock-width
+      // DIFFERENCE (wider dock → pad the opposite side), so the readable column
+      // sits at the window's centre no matter which panels are open. The
+      // transition matches the docks' width animation (--dur-3/--ease-out), so
+      // the column holds its place while a dock slides; chrome.css disables it
+      // during a drag-resize (.app.is-resizing) just like the docks do.
+      // --cm-sbw cancels the one-sided scrollbar gutter: with a right-side
+      // gutter of width G the visible box is clientWidth + G wide, so padding
+      // the left by the same G lands the column dead on window-centre. Padding
+      // stays inside the border box, so — unlike a left gutter — it never
+      // shifts CM's layer origin. Overlay scrollbars measure G = 0 and the
+      // extra padding collapses to nothing.
+      paddingLeft: "calc(var(--center-pad-l, 0px) + var(--cm-sbw, 0px))",
+      paddingRight: "var(--center-pad-r, 0px)",
+      transition:
+        "padding-left var(--dur-3) var(--ease-out), padding-right var(--dur-3) var(--ease-out)",
     },
     ".cm-content": {
       // The app sets body { cursor: default }, which the contenteditable would
@@ -69,6 +106,25 @@ export const editorTheme = EditorView.theme(
       caretColor: "var(--accent-text)",
       overflowWrap: "anywhere", // break long unbroken tokens instead of clipping
     },
+
+    // CM6's own base theme gives every line `padding: 0 2px 0 6px`. The hanging
+    // indent below has to ADD to that left padding rather than replace it — a bare
+    // padding-left would drop the 6px and slide list lines left of every paragraph
+    // — so the base is restated here once, as a variable, and the hang composes
+    // onto it. Blocks that indent their whole line (callouts) override the
+    // variable instead of the padding, and keep working.
+    ".cm-line": { "--line-pad-l": "6px", paddingLeft: "var(--line-pad-l)" },
+    // Hanging indent on a list line (listIndent.ts sets --hang to the measured
+    // width of that line's rendered prefix: indent + marker + the gap after it).
+    // BOTH halves are load-bearing: the padding pushes every wrapped row in by the
+    // prefix width, the negative text-indent pulls the FIRST row back out to the
+    // margin so the marker still starts where it always did. The result is an item
+    // whose wrapped rows line up under its own text rather than under its bullet.
+    ".cm-line.cm-hang": {
+      paddingLeft: "calc(var(--line-pad-l) + var(--hang, 0px))",
+      textIndent: "calc(-1 * var(--hang, 0px))",
+    },
+
     "&.cm-focused": { outline: "none" },
     ".cm-cursor, .cm-dropCursor": {
       // accent-text, not accent: the caret is a hairline drawn ON the page, so it
@@ -115,6 +171,13 @@ export const editorTheme = EditorView.theme(
     // Freshly typed AI answer text fades + rises in as the typewriter reveals it.
     ".cm-ai-fresh": {
       animation: "hln-ai-type 260ms var(--ease-out, ease-out) both",
+    },
+
+    // A range the user previously asked the AI about — hovering it re-opens the
+    // answer popup. Deliberately quiet: a dashed hairline, not a fill.
+    ".cm-ask-mark": {
+      borderBottom: "1px dashed var(--accent-text)",
+      cursor: "default",
     },
 
     // Headings. H1–H3 carry the editorial display face (they're the note's own
@@ -180,8 +243,8 @@ export const editorTheme = EditorView.theme(
       padding: "0.05em 0.15em",
     },
     ".cm-blockquote": {
-      borderLeft: "3px solid var(--border)",
-      paddingLeft: "14px",
+      borderLeft: "var(--cm-bq-border) solid var(--border)",
+      paddingLeft: "var(--cm-bq-pad)",
       color: "var(--text-muted)",
       fontStyle: "italic",
     },
@@ -195,9 +258,12 @@ export const editorTheme = EditorView.theme(
     // Callouts (> [!type]) — Obsidian-style: per-type tinted block background
     // (--callout-rgb is set per line by the live preview), colored bold title
     // with the type's icon, normal-color body.
+    // The 12px runs through --line-pad-l so a list inside a callout keeps the
+    // callout's own left inset AND gets its hanging indent on top of it.
     ".cm-callout-line": {
       backgroundColor: "rgba(var(--callout-rgb), 0.09)",
-      padding: "1px 12px",
+      "--line-pad-l": "12px",
+      padding: "1px var(--line-pad-l)",
     },
     ".cm-callout-first": {
       borderTopLeftRadius: "6px",
@@ -246,7 +312,11 @@ export const editorTheme = EditorView.theme(
       fontSize: "0.9em",
       cursor: "pointer",
     },
-    ".cm-task-alt": { color: "var(--accent-text)", marginRight: "6px", fontSize: "1.05em" },
+    ".cm-task-alt": {
+      color: "var(--accent-text)",
+      marginRight: "var(--cm-task-alt-gap)",
+      fontSize: "calc(var(--cm-task-alt-scale) * 1em)",
+    },
 
     // Fold handle (heading/list/callout collapse chevron). The widget's SVG has
     // only a viewBox, so without an explicit size it balloons to fill the line —
@@ -288,6 +358,9 @@ export const editorTheme = EditorView.theme(
     ".cm-math-block": {
       display: "block",
       textAlign: "center",
+      // text-indent inherits, so a display:block widget sitting on a list line
+      // would otherwise pick up that line's negative hanging indent.
+      textIndent: "0",
       margin: "12px 0",
       maxWidth: "100%",
       overflowX: "auto",
@@ -295,7 +368,7 @@ export const editorTheme = EditorView.theme(
     },
 
     // Tables
-    ".cm-table-wrap": { maxWidth: "100%", overflowX: "auto", margin: "10px 0" },
+    ".cm-table-wrap": { maxWidth: "100%", overflowX: "auto", margin: "10px 0", textIndent: "0" },
     ".cm-table": { borderCollapse: "collapse", fontSize: "0.95em" },
     ".cm-table th, .cm-table td": {
       border: "1px solid var(--border)",
@@ -312,11 +385,15 @@ export const editorTheme = EditorView.theme(
     ".cm-bullet": { color: "var(--accent-text)" },
     ".cm-task": {
       accentColor: "var(--accent)",
-      width: "15px",
-      height: "15px",
+      width: "var(--cm-task-box)",
+      height: "var(--cm-task-box)",
+      // The widget replaces the whole "- [x] " prefix, so its advance (box + gap)
+      // is what listIndent.ts hangs a task line's wrapped rows on. box-sizing is
+      // pinned so that advance really is --cm-task-box and not box + UA border.
+      boxSizing: "border-box",
       verticalAlign: "middle",
       cursor: "pointer",
-      margin: "0 2px 0 0",
+      margin: "0 var(--cm-task-gap) 0 0",
     },
 
     // In-note find (NoteSearchBar) — highlight all matches, accent the current one.
@@ -330,4 +407,33 @@ export const editorTheme = EditorView.theme(
     },
   },
   { dark: true },
+);
+
+// Keeps --cm-sbw on the scroller equal to the width the right-hand scrollbar
+// gutter actually reserves — the paddingLeft calc() in the theme above needs it
+// to re-centre the column. Never hard-code a scrollbar width: it varies by
+// platform and DPR, and overlay scrollbars reserve nothing. The scroller has no
+// border, so offsetWidth − clientWidth IS the reserved gutter.
+export const scrollbarPadPlugin = ViewPlugin.fromClass(
+  class {
+    // Last width written. Skipping unchanged writes matters: an unconditional
+    // style write on every geometry pass would itself retrigger geometryChanged,
+    // forever. Reusing one request object also lets CM coalesce pending measures.
+    written = -1;
+    measure: { read: () => number; write: (gutter: number) => void };
+    constructor(view: EditorView) {
+      this.measure = {
+        read: () => view.scrollDOM.offsetWidth - view.scrollDOM.clientWidth,
+        write: (gutter) => {
+          if (gutter === this.written) return;
+          this.written = gutter;
+          view.scrollDOM.style.setProperty("--cm-sbw", gutter + "px");
+        },
+      };
+      view.requestMeasure(this.measure);
+    }
+    update(u: ViewUpdate) {
+      if (u.geometryChanged) u.view.requestMeasure(this.measure);
+    }
+  },
 );

@@ -4,12 +4,21 @@
 //
 // After wrapping, the selection is kept on the inner text so you can keep typing
 // or hit "[" again without the caret jumping.
+//
+// Returning false on an empty selection is load-bearing, not just tidy: it is
+// what lets the keydown through to auto-close (autoClose.ts), which turns a
+// bare "[" into "[]" and a second one into the "[[]]" wikilink skeleton. These
+// bindings therefore own the with-a-selection case and auto-close owns the
+// without-one case, and they cannot collide — a keymap claims the keydown
+// before any text insertion exists for an input handler to see.
 import { EditorSelection, type ChangeSpec } from "@codemirror/state";
 import type { KeyBinding } from "@codemirror/view";
 
 // Wrap every non-empty selection range in [[…]]. Returns false (letting the key
-// insert normally) when nothing is selected.
-function wrapSelectionInWikilink(view: {
+// insert normally) when nothing is selected. Exported so the editor's
+// right-click "Add link" row can call the exact same transaction instead of
+// re-implementing it — the key and the menu item can never drift apart.
+export function wrapSelectionInWikilink(view: {
   state: import("@codemirror/state").EditorState;
   dispatch: (tr: import("@codemirror/state").TransactionSpec) => void;
 }): boolean {

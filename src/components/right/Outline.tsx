@@ -31,7 +31,7 @@ const Outline: Component = () => {
   });
 
   return (
-    <div class="outline">
+    <div class="outline-list">
       <Show when={items().length === 0}>
         <div class="outline__empty">No headings</div>
       </Show>

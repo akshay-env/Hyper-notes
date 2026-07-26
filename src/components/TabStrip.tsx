@@ -172,6 +172,10 @@ const TabStrip: Component = () => {
           const isHover = () => hovered() === i();
           const closable = () => !(openTabs().length === 1 && isBlankTab(tab));
           const held = () => drag()?.from === i();
+          // A hairline sits before every tab except these — see .tab::before in
+          // chrome.css for why (first tab, the notch, and the tab right after it).
+          const isFirst = () => i() === 0;
+          const isAfterActive = () => i() === activeTabIndex() + 1;
           return (
             <div
               class="tab"
@@ -180,6 +184,8 @@ const TabStrip: Component = () => {
                 "tab--compact": layout().compact,
                 "tab--overlap": layout().overlap,
                 "tab--held": held(),
+                "tab--first": isFirst(),
+                "tab--after-active": isAfterActive(),
               }}
               style={{
                 width: `${layout().tabW}px`,
