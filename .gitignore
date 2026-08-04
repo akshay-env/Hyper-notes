@@ -26,4 +26,12 @@ Thumbs.db
 # ── Editor / OS ─────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+.claude/
 *.swp
+
+# ── Internal working notes ──────────────────────────────────────────────────
+# QA write-ups and fix plans from past debugging sessions. Useful locally as a
+# record of what was investigated, but they document process rather than the
+# app, and nothing in the build or the README refers to them.
+docs/QA_REPORT.md
+docs/fix-plans/

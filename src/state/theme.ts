@@ -261,7 +261,6 @@ const [themeConfig, setThemeConfig] = createSignal<ThemeConfig>(load());
 const [themeRevision, setThemeRevision] = createSignal(0);
 export { themeConfig, themeRevision };
 
-export const themeMode = () => resolveMode(themeConfig().mode);
 export const currentBg = () => effectiveBg(themeConfig());
 export const currentAccent = () => themeConfig().accent;
 export const currentFont = () => themeConfig().font;

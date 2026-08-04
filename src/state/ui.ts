@@ -228,7 +228,6 @@ export const activeNoteFolder = () => {
 
 // Display helpers for the active note (breadcrumb + status bar path).
 const nameFromPath = (p: string) => p.split("/").pop()?.replace(/\.md$/i, "") ?? "Note";
-export const activeNoteName = () => nameFromPath(activeNotePath());
 export const activeNoteCrumb = () =>
   activeNotePath().replace(/^\//, "").replace(/\.md$/i, "").split("/").join(" / ");
 export const activeNoteRelPath = () => activeNotePath().replace(/^\//, "");
@@ -304,12 +303,6 @@ export function requestDelete(paths: string[], name: string, count = 1) {
   if (paths.length === 0) return;
   setDeleteTarget({ paths, name, count });
 }
-export function closeDialogs() {
-  setNewFolderOpen(false);
-  setDeleteTarget(null);
-  setRenameTarget(null);
-}
-
 // ── Create / rename / delete flows (vault + documents + tabs kept in sync) ─────
 // Fresh notes start EMPTY: the editor's inline-title widget (filename = H1) is
 // the note's title. Seeding a literal "# Name" heading duplicated it — and went

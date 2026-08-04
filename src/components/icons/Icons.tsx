@@ -32,24 +32,6 @@ const base = (w: number, h: number, children: JSX.Element, p: IconProps): JSX.El
   </svg>
 );
 
-// Filled hub node with five satellites (SidebarHeader graph toggle).
-export const GraphIcon: Component<IconProps> = (p) =>
-  base(16, 16, (
-    <>
-      <line x1="8.2" y1="8.6" x2="7.9" y2="4.5" />
-      <line x1="8.2" y1="8.6" x2="12.9" y2="3.3" />
-      <line x1="8.2" y1="8.6" x2="4.2" y2="6.9" />
-      <line x1="8.2" y1="8.6" x2="4.3" y2="11.6" />
-      <line x1="8.2" y1="8.6" x2="12.3" y2="11.6" />
-      <circle cx="8.2" cy="8.6" r="2.2" fill="currentColor" stroke="none" />
-      <circle cx="7.9" cy="4.5" r="1.4" fill="currentColor" stroke="none" />
-      <circle cx="12.9" cy="3.3" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="4.2" cy="6.9" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="4.3" cy="11.6" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="12.3" cy="11.6" r="1.3" fill="currentColor" stroke="none" />
-    </>
-  ), p);
-
 // Minimal folder with a front-flap lip (SidebarHeader new-folder).
 export const FolderIcon: Component<IconProps> = (p) =>
   base(18, 16, (
@@ -106,37 +88,6 @@ export const FindIcon: Component<IconProps> = (p) =>
       <line x1="15.6" y1="15.6" x2="21" y2="21" />
     </>
   ), p);
-
-// Right-panel toggle (EditorHeader.qml): frame + divider, right column filled
-// when the panel is open.
-export const PanelToggleIcon: Component<IconProps & { filled?: boolean }> = (p) => (
-  <svg
-    width={p.size ?? 20}
-    height={p.size ?? 20}
-    viewBox="0 0 20 20"
-    fill="none"
-    stroke="currentColor"
-    stroke-width={
-      // This icon builds its own <svg> so the right column can fill-animate, so it
-      // can't go through base() — derive from the same ratio to stay in the set.
-      +(20 * STROKE_RATIO).toFixed(2)
-    }
-    stroke-linejoin="round"
-    class={p.class}
-    style={p.style}
-  >
-    <rect x="2.5" y="3.5" width="15" height="13" />
-    <line x1="12.5" y1="3.5" x2="12.5" y2="16.5" />
-    <rect
-      x="12.5"
-      y="3.5"
-      width="5"
-      height="13"
-      stroke="none"
-      style={{ fill: "currentColor", opacity: p.filled ? 1 : 0, transition: "opacity 200ms ease-in-out" }}
-    />
-  </svg>
-);
 
 // Tiny document glyph for the status-bar word count (StatusBar.qml, 11x13).
 export const DocIcon: Component<IconProps> = (p) =>

@@ -39,10 +39,6 @@ export function findPathById(id: string): string {
   return cache.get(id) ?? "";
 }
 
-export function noteIdExists(id: string): boolean {
-  return findPathById(id) !== "";
-}
-
 // ── Live-buffer bridge (injected, deliberately not imported) ──────────────────
 // ensureNoteId reads and writes the DOCS STORE. But when `path` is the note the
 // editor currently holds, the store is NOT the authoritative copy of that note —

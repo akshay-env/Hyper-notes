@@ -36,11 +36,6 @@ export function createDoc(path: string, initial = ""): void {
   if (docs[path] === undefined) setDocs(path, initial);
 }
 
-// Delete a note's content.
-export function deleteDoc(path: string): void {
-  setDocs(produce((d) => void delete d[path]));
-}
-
 // Remove several notes' content at once and return what was removed, keyed by
 // path (used by the bin to hold a deleted subtree's documents).
 export function takeDocs(paths: string[]): Record<string, string> {

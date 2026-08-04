@@ -2268,12 +2268,6 @@
   background: var(--accent-hover);
 }
 
-/* ---------- Frontmatter hiding (frontmatter.ts) ---------- */
-/* !important to beat CM6's own equal-specificity .cm-line display rule. */
-.cm-frontmatter-line {
-  display: none !important;
-}
-
 /* ---------- Wikilink hover card (LivePreviewEditor.qml linkMenu / preview) ---------- */
 .wikilink-card {
   z-index: 300;

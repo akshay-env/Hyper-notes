@@ -133,9 +133,6 @@ export function openWikilinkTarget(title: string) {
   const path = resolveOrCreateWikilinkTarget(title);
   if (path) selectNoteByPath(path);
 }
-export function openAllWikilinkTargets(titles: string[]) {
-  for (const t of titles) openWikilinkTarget(t);
-}
 
 // Open a note by its stable id. Unlike a title link, a dead id is a NO-OP, not
 // a click-to-create: the id names one specific note (deleted/binned), and

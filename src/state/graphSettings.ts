@@ -166,14 +166,3 @@ export const graphSettingsAreDefault = (): boolean => {
     (k) => s[k] === GRAPH_DEFAULTS[k],
   );
 };
-
-// Physics keys — changing one of these must re-heat the running layout, since the
-// simulation has already cooled to rest by the time the user drags a slider.
-export const PHYSICS_KEYS: (keyof GraphSettings)[] = [
-  "repulsion",
-  "linkDistance",
-  "linkStrength",
-  "gravity",
-  "collisionRadius",
-  "damping",
-];

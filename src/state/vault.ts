@@ -155,13 +155,6 @@ export function toggleExpand(path: string): void {
   }));
 }
 
-export function expandFolder(path: string): void {
-  setVaultTree(produce((draft) => {
-    const n = findNode(draft, path);
-    if (n?.isFolder) n.expanded = true;
-  }));
-}
-
 // Create a folder under `parentPath` ("" = root). Returns the new folder path.
 export function createFolder(parentPath: string, name: string): string {
   const clean = name.trim() || "New Folder";
