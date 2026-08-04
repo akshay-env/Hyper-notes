@@ -16,6 +16,8 @@ import { livePreview, blockPreview, calloutFolding } from "./livePreview";
 import { noteSearchExtension } from "./noteSearch";
 import { propertiesPanel } from "./properties";
 import { wikilinkInteractions } from "./wikilinkInteractions";
+import { linkEditCommit } from "./linkEditCommit";
+import { linkTailGuard } from "./linkTailGuard";
 import { externalLinkInteractions } from "./externalLinkInteractions";
 import { askPopupMarks } from "./askPopupMarks";
 import { wikilinkAutocomplete } from "./wikilinkComplete";
@@ -88,8 +90,10 @@ export function createEditorState(
       // replacing it. With no selection they fall through to normal typing.
       // markdownKeymap = Enter continues lists/quotes/tasks, Backspace deletes
       // list markup as a unit; indentWithTab = Tab nests a list item.
-      // titleNavKeymap: Backspace/ArrowUp against the top of the note step INTO the
+      // titleNavKeymap: ArrowUp against the top row of the note steps INTO the
       // inline title (the reverse of Enter, which hands focus down to the body).
+      // Backspace deliberately does NOT — at the top of the body it deletes (or
+      // does nothing), never teleports focus upward.
       // autoCloseKeymap: only Backspace (deleteBracketPair) — closeBrackets itself is
       // an inputHandler, not a keymap, which is exactly why it cannot fight
       // linkShortcutKeymap's "[" over a selection. Both must precede defaultKeymap,
@@ -123,6 +127,12 @@ export function createEditorState(
       // or Ctrl+F keymap — see noteSearch.ts for why we own the highlight).
       noteSearchExtension,
       wikilinkInteractions,
+      // Label edits rename the pinned note when the caret leaves the link —
+      // the parent-side half of the label/title contract (linkEditCommit).
+      linkEditCommit,
+      // Keeps the hidden (id:…) tail attached: typing at its edge can't detach
+      // it into visible prose, and backspacing it can't silently strip the id.
+      linkTailGuard,
       externalLinkInteractions,
       // Dashed marks over ranges already asked about — hover re-opens the popup.
       askPopupMarks,

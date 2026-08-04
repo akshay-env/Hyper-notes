@@ -7,6 +7,17 @@
 // click while empty. Enter (or Ask with text) streams the answer into the note;
 // Shift+Enter inserts a newline instead — the textarea auto-grows up to 5 lines
 // (then scrolls) so a multi-line question stays readable while typing it.
+//
+// Collapsed anchoring: the ROOT keeps spanning the editor area untouched (its right
+// edge is what measureColumn() measures the open bar's column against), and only the
+// pill is offset — by --ask-collapsed-mr, consumed by .ask-wrap in chrome.css and
+// overridden by .ask-wrap.is-open. That offset carries the right panel's width while
+// the panel is CLOSED, which looks odd until you watch a toggle: closing the dock
+// widens the editor area by W, so without the term the pill would jump right by W.
+// Adding W back holds it still — and because margin-right transitions on the same
+// --dur-3/--ease-out curve as the dock's width, the two cancel every frame, not just
+// at the endpoints. With the panel OPEN the term is 0, so dragging its resize handle
+// still carries the pill inward with the editor area.
 import { type Component, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import {
   askOpen,
@@ -21,7 +32,13 @@ import {
 import { openAskPopupAt } from "../../state/askPopup";
 import { editorView } from "../../state/editor";
 import { aiEnabled, webSearch, setWebSearch, webSearchSupported } from "../../state/settings";
-import { openSettings } from "../../state/ui";
+import { openSettings, rightPanelOpen, rightPanelWidth } from "../../state/ui";
+
+// Extra inward nudge for the COLLAPSED pill, on top of the .ask-bar container's
+// 12px --ask-gap: the pill was reading as glued to the right-panel seam, and this
+// lifts it off into the editor without moving the container (whose right edge the
+// open bar's column measurement depends on).
+const COLLAPSED_NUDGE = 10;
 
 const AskBar: Component = () => {
   let rootRef: HTMLDivElement | undefined;
@@ -55,6 +72,90 @@ const AskBar: Component = () => {
     closeAsk();
     setText("");
   };
+
+  // ── Column alignment ────────────────────────────────────────────────────────
+  // The OPEN bar spans the editor's readable column — the same span the note's
+  // text occupies — via --ask-open-w/-mr on the root (consumed by
+  // .ask-wrap.is-open in chrome.css). Measured off the live editor rather than
+  // computed in CSS: the column's position depends on the dock-centring pads AND
+  // the scrollbar-gutter var scrollbarPadPlugin writes straight onto the
+  // scroller, which no rule at the bar's level can read.
+  let lastW = -1;
+  let lastMr = -1;
+  const measureColumn = (): boolean => {
+    const root = rootRef;
+    const view = editorView();
+    if (!root || !view) return false;
+    const rect = view.contentDOM.getBoundingClientRect();
+    const cs = getComputedStyle(view.contentDOM);
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padR = parseFloat(cs.paddingRight) || 0;
+    // Bar edges land on the TEXT's edges (the content box minus its own inner
+    // padding) — the same span the inline title input covers — not the 920px
+    // content box, whose 52px breathing room would leave the bar looking wider
+    // than the writing it sits under.
+    const w = Math.max(0, rect.width - padL - padR);
+    const mr = Math.max(0, root.getBoundingClientRect().right - (rect.right - padR));
+    // Skip no-op writes: contentDOM's ResizeObserver fires on every HEIGHT change
+    // (typing, streaming), and none of those move the column horizontally.
+    if (Math.abs(w - lastW) < 0.5 && Math.abs(mr - lastMr) < 0.5) return false;
+    lastW = w;
+    lastMr = mr;
+    root.style.setProperty("--ask-open-w", `${w}px`);
+    root.style.setProperty("--ask-open-mr", `${mr}px`);
+    return true;
+  };
+
+  createEffect(() => {
+    const view = editorView();
+    if (!askOpen() || !view) return;
+    // Fresh measurement on every open (and editor swap): the vars may be stale
+    // from a layout that changed while the bar was collapsed. Writing them in
+    // the same update as the is-open class means the open transition animates
+    // straight to the right geometry.
+    lastW = lastMr = -1;
+    measureColumn();
+    // While open, follow the column live (dock toggles/drags, window resizes).
+    // Those arrive as a burst of per-frame resizes, and easing toward a target
+    // that moves every frame would trail the column — so tracking updates run
+    // with the wrap's transition cut (.ask-bar--sync) until the burst goes
+    // quiet. The initial RO fire on observe() re-measures unchanged values — the
+    // synchronous measure just above already banked them — and falls out at the
+    // no-op check on the frame it schedules, so it never cuts the opening
+    // animation.
+    let syncTimer = 0;
+    // The observer only SCHEDULES; the frame does the work. measureColumn() forces
+    // layout three times over (a rect plus a getComputedStyle on contentDOM, then a
+    // rect on the root), and this observer watches TWO elements, so a dock drag can
+    // enter the callback more than once in the same frame and pay all of it again
+    // for a column that can only have one position per frame. One pending frame id
+    // at a time collapses that burst to a single measurement, whatever fires it.
+    let frame = 0;
+    const sync = () => {
+      frame = 0;
+      if (!measureColumn()) return;
+      rootRef?.classList.add("ask-bar--sync");
+      window.clearTimeout(syncTimer);
+      syncTimer = window.setTimeout(() => rootRef?.classList.remove("ask-bar--sync"), 150);
+    };
+    const ro = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(sync);
+    });
+    // scrollDOM's CONTENT box shrinks when the centring pads or gutter var
+    // change even though the pane hasn't moved; contentDOM catches the column
+    // itself resizing once the pane squeezes under the 920px cap.
+    ro.observe(view.scrollDOM);
+    ro.observe(view.contentDOM);
+    onCleanup(() => {
+      ro.disconnect();
+      // Nothing left to measure against once the bar closes or the editor swaps —
+      // and `sync` would touch a rootRef that is on its way out.
+      if (frame) cancelAnimationFrame(frame);
+      window.clearTimeout(syncTimer);
+      rootRef?.classList.remove("ask-bar--sync");
+    });
+  });
 
   // The pill/Ask button: expand when collapsed; ask when there's text; minimise
   // when open but empty (mirrors the Qt "click-when-empty minimises" behaviour).
@@ -161,7 +262,19 @@ const AskBar: Component = () => {
   });
 
   return (
-    <div class="ask-bar" ref={rootRef}>
+    <div
+      class="ask-bar"
+      ref={rootRef}
+      // Declarative, not root.style.setProperty in an effect, so it can never race
+      // with measureColumn()'s imperative writes of --ask-open-w/--ask-open-mr on
+      // this same element. Solid's style() (and its setStyleProperty fast path)
+      // only ever setProperty/removeProperty the keys of THIS object and never
+      // rewrites cssText for an object-valued style prop — the other two vars are
+      // untouched. See node_modules/solid-js/web/dist/web.js, style().
+      style={{
+        "--ask-collapsed-mr": `${(rightPanelOpen() ? 0 : rightPanelWidth()) + COLLAPSED_NUDGE}px`,
+      }}
+    >
       <div class="ask-wrap" classList={{ "is-open": askOpen() }}>
         <svg class="ask-lead" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="7" />

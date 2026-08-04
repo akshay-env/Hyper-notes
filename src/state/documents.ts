@@ -2,7 +2,7 @@
 // loads/saves through it as tabs switch, and the graph/outline read from it.
 // Starts EMPTY and is filled by replaceDocs() when a vault folder is opened.
 import { createStore, produce, reconcile } from "solid-js/store";
-import { stripNonLinkRegions } from "../graph/wikilinkParse";
+import { hasWikilinkTo, rewriteLinksInText } from "../graph/wikilinkParse";
 import { vaultRoot } from "./session";
 import { writeNoteFs } from "../backend/vaultApi";
 
@@ -84,60 +84,40 @@ export function renameDoc(oldPath: string, newPath: string): void {
 }
 
 // ── Rename → link propagation ─────────────────────────────────────────────────
-// Rewrite one segment of a wikilink's inner text: if its note name (ignoring a
-// folder prefix, "#/^" anchor, ".md" and surrounding spaces) is `wantKey`,
-// swap that name for `newTitle`, keeping the prefix, anchor and spacing intact.
-function rewriteSegment(seg: string, wantKey: string, newTitle: string): string {
-  const lead = seg.match(/^\s*/)![0];
-  const trail = seg.match(/\s*$/)![0];
-  const core = seg.slice(lead.length, seg.length - trail.length);
-  const anchorIdx = core.search(/[#^]/);
-  const namePart = anchorIdx >= 0 ? core.slice(0, anchorIdx) : core;
-  const anchor = anchorIdx >= 0 ? core.slice(anchorIdx) : "";
-  const noMd = namePart.replace(/\.md$/i, "");
-  const slash = noMd.lastIndexOf("/");
-  const base = slash >= 0 ? noMd.slice(slash + 1) : noMd;
-  if (base.trim().toLowerCase() !== wantKey) return seg;
-  const prefix = slash >= 0 ? noMd.slice(0, slash + 1) : "";
-  return lead + prefix + newTitle + anchor + trail;
+// The text-level rewrite semantics (title-tracking segments follow the rename,
+// prose labels are never touched, title-resolved segments get their slot
+// filled — graph/wikilinkParse's rewriteLinksInText has the full contract)
+// live with the rest of the link grammar; this side owns the store sweep and
+// the disk mirror.
+
+// Whether ANY note in the vault holds a [[…]] link with a segment naming
+// `title`. Cheap pre-check for renamePath: an id is only ever minted into the
+// renamed note when a referrer actually exists — no link, no frontmatter
+// surprise.
+export function hasLinkTo(title: string): boolean {
+  for (const p in docs) if (hasWikilinkTo(docs[p], title)) return true;
+  return false;
 }
 
-// Rewrite every real [[…]] link in `text` whose target is `wantKey` → `newTitle`.
-// Links inside code/frontmatter are skipped (stripNonLinkRegions blanks them but
-// keeps offsets). Returns the new text, or null if nothing changed.
-function rewriteLinksInText(text: string, wantKey: string, newTitle: string): string | null {
-  const blanked = stripNonLinkRegions(text);
-  const re = /\[\[[^\]\n]+\]\]/g;
-  let m: RegExpExecArray | null;
-  let out = "";
-  let last = 0;
-  let changed = false;
-  while ((m = re.exec(blanked)) !== null) {
-    const start = m.index;
-    const end = start + m[0].length;
-    const inner = text.slice(start + 2, end - 2);
-    const newInner = inner
-      .split("|")
-      .map((s) => rewriteSegment(s, wantKey, newTitle))
-      .join("|");
-    if (newInner !== inner) {
-      out += text.slice(last, start) + "[[" + newInner + "]]";
-      last = end;
-      changed = true;
-    }
-  }
-  return changed ? out + text.slice(last) : null;
-}
-
-// Point every [[oldTitle]] link across the vault at [[newTitle]] (after a note
-// rename). Returns the paths whose content changed (also mirrored to disk).
-export function rewriteLinksForRename(oldTitle: string, newTitle: string): string[] {
-  const wantKey = oldTitle.trim().toLowerCase();
+// After a note rename: sweep every note. Segments whose SLOT pins the renamed
+// note (its id) and whose text still reads as the old title are rewritten to
+// the new one — unconditionally, the id makes it unambiguous. Segments that
+// resolve BY the old title (bare links, "_" slots) are rewritten — and their
+// slot filled with `id` — only when `rewriteBare` says the old name was
+// unambiguous (no other note still answers to it). `id` is "" when the renamed
+// note has no id and no referrer justified minting one. Returns the changed
+// paths (also mirrored to disk).
+export function rewriteLinksForRename(
+  oldTitle: string,
+  newTitle: string,
+  id: string,
+  rewriteBare: boolean,
+): string[] {
   const changed: string[] = [];
   setDocs(
     produce((d) => {
       for (const p in d) {
-        const next = rewriteLinksInText(d[p], wantKey, newTitle);
+        const next = rewriteLinksInText(d[p], oldTitle, newTitle, id, rewriteBare);
         if (next !== null) {
           d[p] = next;
           changed.push(p);

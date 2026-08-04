@@ -2,7 +2,13 @@
 // (flattenNotes → extractLinks → buildGlobalGraph → calculateLayers). Given the
 // vault tree + a file reader, produces the nodes/edges the force layout draws.
 import type { VaultNode } from "../state/vaultTypes";
-import { extractLinks as parseLinks, titleKey, normalizeTarget } from "./wikilinkParse";
+import {
+  extractLinks as parseLinks,
+  titleKey,
+  normalizeTarget,
+  noteIdOf,
+  parseIdTarget,
+} from "./wikilinkParse";
 
 export interface GraphNode {
   id: string;
@@ -84,9 +90,18 @@ export function buildGraphData(
     if (!titleToNode.has(pathKey)) titleToNode.set(pathKey, n);
   }
 
-  // Outbound links per note path.
+  // Outbound links per note path — and, from the same single read of each
+  // note, its frontmatter id, so [display](id:XYZ) destinations resolve the
+  // same pass. First writer wins per id (duplicate ids shouldn't exist; if a
+  // copy-paste creates one, links keep pointing at one stable note).
   const outLinks: Record<string, string[]> = {};
-  for (const n of allNotes) outLinks[n.path] = parseLinks(readFile(n.path));
+  const idToNode = new Map<string, VaultNode>();
+  for (const n of allNotes) {
+    const text = readFile(n.path);
+    outLinks[n.path] = parseLinks(text);
+    const id = noteIdOf(text);
+    if (id && !idToNode.has(id)) idToNode.set(id, n);
+  }
 
   // Nodes.
   const nodes: GraphNode[] = allNotes.map((n) => ({
@@ -105,7 +120,9 @@ export function buildGraphData(
   for (const n of allNotes) {
     const linked = new Set<string>();
     for (const dest of outLinks[n.path] || []) {
-      const target = titleToNode.get(titleKey(normalizeTarget(dest)));
+      const id = parseIdTarget(dest);
+      const target =
+        id !== null ? idToNode.get(id) : titleToNode.get(titleKey(normalizeTarget(dest)));
       if (!target || linked.has(target.path)) continue;
       linked.add(target.path);
       edges.push({ from: n.path, to: target.path });

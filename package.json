@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:graph": "tsx src/graph/__tests__/graphData.test.mts && tsx src/graph/__tests__/physics.test.mts && tsx src/graph/__tests__/physicsWasm.test.mts",
+    "test:graph": "tsx src/graph/__tests__/graphData.test.mts && tsx src/graph/__tests__/wikilinkParse.test.mts && tsx src/graph/__tests__/physics.test.mts && tsx src/graph/__tests__/physicsWasm.test.mts",
     "test:theme": "tsx src/theme/__tests__/contrast.test.mts",
     "test:ai": "tsx src/ai/__tests__/selectionAnchor.test.mts",
     "test": "npm run test:graph && npm run test:theme && npm run test:ai",

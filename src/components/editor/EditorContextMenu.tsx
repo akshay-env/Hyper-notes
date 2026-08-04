@@ -2,7 +2,21 @@
 //   1. Suppresses the browser's native context menu EVERYWHERE (its "Reload",
 //      "Inspect", "Save image as…" break the illusion of a native app).
 //   2. Over a [[wikilink]] → a link menu: open note, each target, open all in
-//      tabs, and "Add note" (append another target + create the note).
+//      tabs, and "Add note" (append another target + create the note). Opening a
+//      target from here CONVERTS the link to [display](id:…) first, single- and
+//      multi-target alike, through the very same function the left-click uses
+//      (state/wikilink's convertWikilinkAndOpen) — a link must not behave
+//      differently depending on which mouse button reached it.
+//   2b. Over an id link ([display](id:AAA,BBB)) → the near-mirror of that menu:
+//      one row per id the destination carries, open all in tabs, and the same
+//      "Add note". An id link is meant to be indistinguishable from a wikilink
+//      to the reader, so it must not be the one link form where right-click does
+//      less. It used to be exactly that: an id destination held a single target,
+//      so this menu dropped both multi-target items — and since single-target
+//      [[Name]] links convert to the id form the moment they resolve, "add
+//      another note to this link" quietly became unreachable in a real vault.
+//      That is the regression the list destination (graph/wikilinkParse) and
+//      these rows undo.
 //   3. Over a text selection → link it (as a wikilink or an external URL),
 //      search for it, highlight/remove-highlight it, cut/copy/paste, or ask
 //      the AI about it.
@@ -14,17 +28,22 @@ import { Portal } from "solid-js/web";
 import { MenuPointAnchor } from "../core/MenuPointAnchor";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { syntaxTree } from "@codemirror/language";
 import { editorView } from "../../state/editor";
 import { setNoteSearchSeed, setNoteSearchOpen } from "../../state/ui";
 import {
-  wikilinkExists,
-  openWikilinkTarget,
-  openAllWikilinkTargets,
+  openLinkAt,
+  linkTargets,
+  type HoverTarget,
   openAddNoteForLink,
+  openNoteById,
+  openAllNotesByIds,
 } from "../../state/wikilink";
 import { openAskPopupAt } from "../../state/askPopup";
-import { parseWikilinkInner } from "../../graph/wikilinkParse";
+import { findPathById } from "../../state/noteId";
+// Both link-range walks are shared with the click handler (editor/
+// wikilinkInteractions), which rewrites the range this menu only reads from —
+// see editor/linkRanges for why they must be one implementation.
+import { noteLinkAt, idLinkRangeAt } from "../../editor/linkRanges";
 import { wrapSelectionInWikilink } from "../../editor/linkShortcuts";
 import { highlightAt, toggleHighlight, type HighlightHit } from "../../editor/highlight";
 import { clipWrite, clipRead } from "../../backend/clipboard";
@@ -33,7 +52,34 @@ import { clipWrite, clipRead } from "../../backend/clipboard";
 // — the menu's positioner is collision-aware and flips/shifts the panel itself.
 type MenuState =
   | { kind: "selection"; x: number; y: number; selection: string; from: number; to: number }
-  | { kind: "link"; x: number; y: number; targets: string[]; from: number; to: number };
+  // A note link ([[A|B]] / [[A|B]](id:X,_)) — one row per segment, resolved
+  // when the menu OPENED (state/wikilink's linkTargets) so the panel's labels
+  // stay stable while it animates out. `segments`/`slots` are what openLinkAt
+  // verifies the range against before rewriting anything. A dead slot keeps
+  // its row rather than being filtered out, so the rows can show it as missing
+  // instead of the link silently appearing to have one fewer target.
+  | {
+      kind: "link";
+      x: number;
+      y: number;
+      segments: string[];
+      slots: (string | null)[];
+      targets: HoverTarget[];
+      from: number;
+      to: number;
+    }
+  // A LEGACY id link ([display](id:AAA,BBB)) — read-only form, still fully
+  // usable from the menu until its note is opened and normalized. `paths[i]`
+  // is what `ids[i]` pointed at when the menu opened; "" = deleted/binned.
+  | {
+      kind: "idlink";
+      x: number;
+      y: number;
+      ids: string[];
+      paths: string[];
+      from: number;
+      to: number;
+    };
 
 // A clipboard string that's plainly a URL — used by "Add external link" to
 // prefer whatever's already on the clipboard over the "https://" placeholder.
@@ -46,19 +92,11 @@ function truncateForLabel(text: string, max = 20): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-// The [[ … ]] range covering document position `pos`, or null. Walks up the
-// syntax tree from either side of `pos` so a click anywhere on the link (chip or
-// raw) finds the whole Wikilink/Embed node.
-function wikilinkRangeAt(view: EditorView, pos: number): { from: number; to: number } | null {
-  const tree = syntaxTree(view.state);
-  for (const side of [1, -1] as const) {
-    let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, side);
-    while (node) {
-      if (node.name === "Wikilink") return { from: node.from, to: node.to };
-      node = node.parent;
-    }
-  }
-  return null;
+// A note path's title: its filename without ".md". The id link's own display
+// text is the WRITER's prose (a whole sentence, after "Ask AI → save as note"),
+// and the id is a hex token — neither names the note, so the menu row shows this.
+function noteTitleOfPath(path: string): string {
+  return (path.split("/").pop() ?? path).replace(/\.md$/i, "");
 }
 
 const EditorContextMenu: Component = () => {
@@ -79,6 +117,10 @@ const EditorContextMenu: Component = () => {
     const m = held();
     return m && m.kind === "link" ? m : null;
   };
+  const idLink = () => {
+    const m = held();
+    return m && m.kind === "idlink" ? m : null;
+  };
 
   const onContextMenu = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
@@ -93,18 +135,46 @@ const EditorContextMenu: Component = () => {
     const view = editorView();
     if (!view) return;
 
-    // (2) Right-clicked on a wikilink → the link menu. Resolve the [[ … ]] from
-    // the document position (via the syntax tree), which works whether the link
-    // is rendered as a chip or showing its raw markdown under the caret.
+    // (2) Right-clicked on a note link → the link menu. Resolve the whole link
+    // (segments + hidden slots) from the document position via the syntax
+    // tree, which works whether the link is rendered as a chip or showing its
+    // raw [[ … ]] under the caret — and resolve every row NOW, so the panel's
+    // labels stay stable while it animates out.
     const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-    const wl = pos == null ? null : wikilinkRangeAt(view, pos);
+    const wl = pos == null ? null : noteLinkAt(view, pos);
     if (wl) {
-      const inner = view.state.sliceDoc(wl.from + 2, wl.to - 2);
-      const targets = parseWikilinkInner(inner).targets;
+      const targets = linkTargets(wl.segments, wl.slots);
       if (targets.length) {
-        setMenu({ kind: "link", x: e.clientX, y: e.clientY, targets, from: wl.from, to: wl.to });
+        setMenu({
+          kind: "link",
+          x: e.clientX,
+          y: e.clientY,
+          segments: wl.segments,
+          slots: wl.slots,
+          targets,
+          from: wl.from,
+          to: wl.to,
+        });
         return;
       }
+    }
+
+    // (2b) …or on an id link → the same menu shape, one row per id. Every id is
+    // resolved HERE rather than in the row's label so the panel's text stays
+    // stable while it animates out (the held() latch keeps the last state, not a
+    // live lookup — a label that re-resolved on read would blank out mid-fade).
+    const idl = pos == null ? null : idLinkRangeAt(view, pos);
+    if (idl) {
+      setMenu({
+        kind: "idlink",
+        x: e.clientX,
+        y: e.clientY,
+        ids: idl.ids,
+        paths: idl.ids.map((id) => findPathById(id)),
+        from: idl.from,
+        to: idl.to,
+      });
+      return;
     }
 
     // (3) A text selection → the format/note menu.
@@ -149,10 +219,11 @@ const EditorContextMenu: Component = () => {
     return from < to ? { from, to } : null;
   };
 
-  // Wrap the selection in [[…]] — the exact transaction bound to the "[" / "]"
+  // Wrap the selection in a link — the exact transaction bound to the "[" / "]"
   // keys (editor/linkShortcuts.ts), reused as-is so the menu and the key can
-  // never drift apart. No note is created here: opening the resulting
-  // [[target]] auto-creates it (see wikilinkInteractions → openWikilinkTarget).
+  // never drift apart. The note is resolved — or CREATED — and its id minted
+  // right here, so the link is born as [[selection]](id:XYZ) with the id
+  // already tracking in the background (the user's contract for this action).
   const addLink = () => {
     const m = sel();
     const view = editorView();
@@ -311,22 +382,57 @@ const EditorContextMenu: Component = () => {
         <Menu.Positioner>
           <Menu.Content
             class="tree-context-menu editor-context-menu"
-            classList={{ "editor-context-menu--link": menu()?.kind === "link" }}
+            classList={{
+              "editor-context-menu--link":
+                menu()?.kind === "link" || menu()?.kind === "idlink",
+            }}
           >
             <Show when={link()}>
               {(l) => (
                 <>
                   <div class="wikilink-menu__header">Open note</div>
+                  {/* Opening a target from HERE fills its slot, exactly as a
+                      left-click on it would — same function, same range, same
+                      flush/mint/verify ordering (state/wikilink's openLinkAt).
+                      The two entry points used not to agree, so the same link
+                      behaved differently by mouse button. Which row was picked
+                      is passed as an index, so a menu open of the SECOND
+                      target fills that slot and navigates where the user
+                      pointed. A dead slot's row is inert (openLinkAt's no-op
+                      contract for dead ids) and says so. */}
                   <For each={l().targets}>
-                    {(t) => (
+                    {(t, i) => (
                       <Menu.Item
-                        value={`open:${t}`}
+                        // Indexed as well as titled: two segments can name the
+                        // same note, and two rows sharing a value would make
+                        // Ark treat them as one item.
+                        value={`open:${i()}:${t.title}`}
                         class="wikilink-menu__row"
-                        onSelect={run(() => openWikilinkTarget(t))}
+                        onSelect={run(() => {
+                          if (t.path || t.canCreate) {
+                            openLinkAt(
+                              editorView(),
+                              { from: l().from, to: l().to },
+                              l().segments,
+                              l().slots,
+                              i(),
+                            );
+                          }
+                        })}
                       >
-                        <span>{t}</span>
-                        <Show when={!wikilinkExists(t)}>
-                          <span class="wikilink-menu__new">New</span>
+                        <Show
+                          when={t.path || t.canCreate}
+                          fallback={
+                            <>
+                              <span>Note not found</span>
+                              <span class="wikilink-menu__new">Missing</span>
+                            </>
+                          }
+                        >
+                          <span>{t.title}</span>
+                          <Show when={!t.path}>
+                            <span class="wikilink-menu__new">New</span>
+                          </Show>
                         </Show>
                       </Menu.Item>
                     )}
@@ -336,13 +442,92 @@ const EditorContextMenu: Component = () => {
                     <Menu.Item
                       value="open-all"
                       class="wikilink-menu__action"
-                      onSelect={run(() => openAllWikilinkTargets(l().targets))}
+                      onSelect={run(() =>
+                        openLinkAt(
+                          editorView(),
+                          { from: l().from, to: l().to },
+                          l().segments,
+                          l().slots,
+                          "all",
+                        ),
+                      )}
                     >
                       Open all in tabs
                     </Menu.Item>
                   </Show>
                   <Menu.Item
                     value="add-note"
+                    class="wikilink-menu__action"
+                    onSelect={run(() => openAddNoteForLink(l().from, l().to))}
+                  >
+                    Add note
+                  </Menu.Item>
+                </>
+              )}
+            </Show>
+
+            {/* The near-mirror of the wikilink menu above, deliberately sharing
+                its classes so the two forms are indistinguishable to the reader
+                (and so this needs no CSS of its own). The one asymmetry is the
+                row LABEL: a wikilink row shows its target, which IS a note
+                title, while an id link's row shows the resolved note's filename
+                — neither the raw id (a hex token) nor the link's display text
+                (the writer's prose, often a whole sentence) names the note. */}
+            <Show when={idLink()}>
+              {(l) => (
+                <>
+                  <div class="wikilink-menu__header">Open note</div>
+                  <For each={l().ids}>
+                    {(id, i) => (
+                      <Menu.Item
+                        // Indexed as well as keyed by id: a hand-edited
+                        // destination could repeat an id, and two rows sharing a
+                        // value would make Ark treat them as one item.
+                        value={`open-id:${i()}:${id}`}
+                        class="wikilink-menu__row"
+                        // A dead id is a NO-OP, matching openNoteById: the id
+                        // names one specific (deleted/binned) note, and creating
+                        // a fresh one under the link's display text would
+                        // silently fork the content. Unlike an unresolved
+                        // [[link]], this is NOT click-to-create — so the row says
+                        // so and does nothing.
+                        onSelect={run(() => {
+                          if (l().paths[i()]) openNoteById(id);
+                        })}
+                      >
+                        <Show
+                          when={l().paths[i()]}
+                          fallback={
+                            <>
+                              <span>Note not found</span>
+                              <span class="wikilink-menu__new">Missing</span>
+                            </>
+                          }
+                        >
+                          <span>{noteTitleOfPath(l().paths[i()])}</span>
+                        </Show>
+                      </Menu.Item>
+                    )}
+                  </For>
+                  <Menu.Separator class="wikilink-menu__divider" />
+                  {/* Hidden for a single target, exactly as above: "open all" of
+                      one note is just "open note", which is the row right there. */}
+                  <Show when={l().ids.length > 1}>
+                    <Menu.Item
+                      value="open-all-ids"
+                      class="wikilink-menu__action"
+                      onSelect={run(() => openAllNotesByIds(l().ids))}
+                    >
+                      Open all in tabs
+                    </Menu.Item>
+                  </Show>
+                  {/* Always offered, and the whole point of the fix: without it
+                      a vault of converted links has nowhere to add a second
+                      target. confirmAddNote branches on the range's own text, so
+                      this hands it the id link's range exactly as the wikilink
+                      menu hands it a [[ … ]] range. */}
+                  <Menu.Item
+                    value="add-note-id"
                     class="wikilink-menu__action"
                     onSelect={run(() => openAddNoteForLink(l().from, l().to))}
                   >

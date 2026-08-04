@@ -27,6 +27,33 @@
   flex-direction: column;
   background: var(--bg);
   position: relative;
+  /* Backdrop-root boundary for the Ask pill's backdrop-filter (.ask-wrap, way down
+     in .editor-area). A backdrop-filter samples its BACKDROP ROOT, and per Filter
+     Effects 2 the only things that form one are: the document root, filter,
+     opacity < 1, mask/clip-path, mix-blend-mode, backdrop-filter itself, and
+     will-change naming any of those. Nothing on the chain .ask-bar → .editor-area →
+     .main → .body → .app → #root → body qualified, so the root was <html> and the
+     pill's blur was sampling the WHOLE WINDOW. That coupled the pill to every
+     repaint on the page: the ~120ms background fades on a hovered tab
+     (.tab:hover:not(.active)) and a hovered file row (.tree-row:hover) each damage
+     the root render pass, which forces the region behind the pill to be
+     re-rasterised and re-blurred — so the editor visibly flickered while the
+     pointer was up in the title bar or off in the sidebar, nowhere near it.
+     Declaring the root here cuts the chrome out of the pill's backdrop: .topbar and
+     .sidebar-dock are siblings ABOVE/BESIDE .main, not inside it, so their hover
+     repaints can no longer reach it.
+
+     will-change is the only entry on that list that costs no pixels — it declares
+     the root without actually applying a filter or dropping opacity. (isolation:
+     isolate, the intuitive spelling, is NOT on the list and was measured doing
+     nothing here.) And `opacity` specifically, never `filter`/`backdrop-filter`:
+     those two would additionally make .main a containing block for position:fixed
+     descendants, silently re-anchoring anything the editor ever floats that way.
+     .main is the right place to cut: it still paints an opaque --bg for the blur to
+     sample (isolating at the transparent .editor-area would change how the pill
+     looks), and it still contains the note text, so the frosted glass over the
+     writing is unchanged. Costs one composited layer for the editor pane. */
+  will-change: opacity;
 }
 .main__placeholder {
   flex: 1;
@@ -80,7 +107,27 @@
   cursor: col-resize;
   display: flex;
   align-items: stretch;
-  justify-content: center;
+}
+/* The 6px box STRADDLES the seam — [seam−3px, seam+3px] — because it is the drag hit
+   area and has to be grabbable from either pane. The 1px bar inside it is something
+   else: a highlight of the divider that is already drawn there, so it has to sit ON
+   that divider. Centring it in a straddling box (the obvious `justify-content:
+   center`) puts it at [seam−0.5px, seam+0.5px] — half a CSS pixel off the border at
+   EVERY device pixel ratio, so it can never land on a whole device pixel and paints
+   as a blurry 2-device-px accent smear beside the crisp 1px border it is meant to
+   light up. Which edge to align to depends on which pane owns the divider:
+   .sidebar draws border-right, i.e. [seam−1px, seam], so the LEFT handle's bar must
+   END at the seam; .right-panel draws border-left, i.e. [seam, seam+1px], so the
+   RIGHT handle's bar must START at it. Hence the 3px inset from the matching edge of
+   the box (the side modifier comes from ResizeHandle.tsx's `side` prop).
+   Do NOT collapse these back into `justify-content: center` on .resize-handle. */
+.resize-handle--left {
+  justify-content: flex-end;
+  padding-right: 3px;
+}
+.resize-handle--right {
+  justify-content: flex-start;
+  padding-left: 3px;
 }
 .resize-handle__bar {
   width: 1px;
@@ -2288,14 +2335,44 @@
   color: var(--text-dim);
 }
 
-/* multi-target hover card → one row per target; hovering a row reveals that
-   note's preview beneath it (WikilinkHoverCard). Rows carry their own padding so
-   they sit off the card edge without a wrapper. */
+/* multi-target hover card → the targets sit SIDE BY SIDE as chips, and hovering
+   one reveals that note's preview in a single panel under the whole strip
+   (WikilinkHoverCard). The preview cannot live next to its own chip any more:
+   inline, it would open between two chips and cut the strip in half — so the
+   markup lifts it out of the loop and this file only has to place it below.
+
+   The card is a fixed 300px, so the strip WRAPS rather than overflowing: a
+   horizontal scrollbar would hide targets behind a gesture, and the whole point
+   of the list is that you can see every target the link points at. Past ~4 rows
+   of chips the strip scrolls vertically instead of growing the card without
+   limit — at that height there is still room for the preview panel underneath,
+   which is the part you are hovering for.
+
+   The 2px here plus the chip's 3px 8px reproduces the inset the old full-width
+   rows got from their own 5px 8px padding; the difference is that the hover
+   background is now a pill around the chip rather than a band across the card,
+   so it needs those 2px to not kiss the card border. */
+.wikilink-card__targets {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 3px;
+  padding: 2px;
+  max-height: 116px;
+  overflow-y: auto;
+}
 .wikilink-card__target {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px;
+  /* gap, not space-between: the badge belongs beside its title on a chip, and
+     space-between would shove it to the far end of a box that is only as wide as
+     its contents anyway. */
+  gap: 6px;
+  /* A single long title must not widen the card past its 300px — it ellipsises
+     inside the chip instead, and the chip takes a strip line of its own. */
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 8px;
   border-radius: var(--r-xs);
   cursor: pointer;
   color: var(--text);
@@ -2312,10 +2389,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.wikilink-card__target-preview {
-  margin-bottom: 4px;
-  padding: 6px 8px 0;
+.wikilink-card__target .wikilink-card__new-label {
+  flex: none;
+}
+/* Full card width, under the strip — so the divider reads as "strip above,
+   preview below" rather than as a rule between two rows. */
+.wikilink-card__expanded {
   border-top: 1px solid var(--divider);
+}
+.wikilink-card__target-preview {
+  padding: 8px 10px 10px;
 }
 
 /* multi-target → open menu */
@@ -2437,6 +2520,18 @@
     width var(--dur-2) var(--ease-out);
   touch-action: none;
 }
+/* Dragging a dock handle resizes the rail every frame, and TabStrip's rail
+   ResizeObserver relays that into a fresh width + transform on every tab. Each
+   frame would therefore restart a --dur-2 ease toward a target the next frame has
+   already moved, so the tabs never arrive — they smear along behind the sidebar
+   edge instead of sitting on it. Same opt-out the docks and the scroller take
+   above; the + button is placed by the same layout pass, so it goes too.
+   (A tab being drag-REORDERED is unaffected either way: TabStrip.tsx puts
+   transition:none on it inline, which no stylesheet rule can outrank.) */
+.app.is-resizing .tab,
+.app.is-resizing .tab-plus {
+  transition: none;
+}
 /* Hairline between adjacent tabs so one doesn't visually bleed into the next.
    Suppressed on the first tab (nothing to its left), the active tab and the
    tab right after it (a line butting the notch reads as a glitch), a held
@@ -2521,6 +2616,24 @@
   height: calc(100% + 1px);
   border-color: var(--border) var(--border) transparent;
   border-radius: var(--r-xs) var(--r-xs) 0 0;
+}
+/* …except on the LEFT edge of the first tab, where that border would double the
+   sidebar↔editor divider. .topbar__left already draws that seam at [seam−1px, seam]
+   and the tabs start hard against it, so an active first tab painted a second border
+   of the same --border at [seam, seam+1px] and the divider came out 2 device px wide
+   in the title bar and 1px everywhere else — a bright bar exactly where the seam is
+   supposed to be at its most continuous. Same reasoning as the .tab::before
+   suppressions above ("a line butting the notch reads as a glitch"); this one is the
+   tab's OWN border and was missed. Only the COLOUR is dropped — .tab's 1px
+   transparent border box stays, so active and inactive tabs remain the same size.
+   Scoped to .active because .tab.active is the only rule that ever colours the left
+   border; an inactive first tab is already transparent there, so a bare .tab--first
+   rule would be dead weight. Correct with the sidebar collapsed too: .topbar__left
+   keeps its border-right at the collapsed width (COLLAPSED_LEFT in TitleBar.tsx) and
+   the first tab still butts it. Must stay AFTER .tab.active — equal specificity, so
+   source order is what wins. */
+.tab--first.active {
+  border-left-color: transparent;
 }
 /* An overlapping tab that's active or hovered lifts clear of the cascade, so it
    loses the seam shadow and shows in full. */
@@ -3164,7 +3277,20 @@
    a compact gold "Ask" button pinned to the RIGHT (beside the right panel). Open, the
    wrap's width animates to 100% — it extends LEFTWARD into a long search bar that
    reaches the left panel with the same gap. Because the container tracks the editor
-   area, the open bar resizes live as either side panel is dragged. */
+   area, the open bar resizes live as either side panel is dragged.
+
+   Anchoring, collapsed: the container's own right edge is the reference
+   measureColumn() reads to derive --ask-open-mr, so it must keep tracking the
+   editor area exactly — the pill is nudged instead, via --ask-collapsed-mr on
+   .ask-wrap (written by AskBar.tsx, overridden by .ask-wrap.is-open). That var is
+   `(right panel closed ? its width : 0) + 10px`. The 10px is the inward nudge off
+   the right-panel seam; the panel-width term is what pins the pill in place across
+   a panel TOGGLE. Closing the right dock slides the editor area's right edge right
+   by W over --dur-3/--ease-out; --ask-collapsed-mr grows by the same W over the
+   same duration and easing (margin-right is in .ask-wrap's transition list), so the
+   two cancel frame-for-frame and the pill never moves. While the panel is OPEN the
+   term is a constant 0, so DRAGGING its resize handle still carries the pill along
+   with the editor area — which is the wanted behaviour there. */
 .ask-bar {
   --ask-gap: 12px; /* = --gutter, so the pill sits on the same rhythm as the docks */
   position: absolute;
@@ -3192,6 +3318,10 @@
   align-items: flex-end;
   justify-content: flex-end;
   width: 54px; /* collapsed = just the compact gold "Ask" button, no icon */
+  /* Collapsed-only inward offset — see the .ask-bar block comment. .ask-wrap.is-open
+     (0,2,0) beats this rule (0,1,0), so the open bar keeps its measured column
+     margin. Both values ride the same margin-right transition below. */
+  margin-right: var(--ask-collapsed-mr, 0px);
   overflow: hidden;
   /* --r-sm, not --r-lg: 12px read as a pill on a 30px-tall button; 6px reads
      rectangular and matches the app's small-control radius. */
@@ -3207,20 +3337,39 @@
   box-shadow: var(--shadow-lift);
   transition:
     width var(--dur-3) var(--ease-out),
+    margin-right var(--dur-3) var(--ease-out),
     background var(--dur-2) var(--ease-out),
     border-color var(--dur-2) var(--ease-out),
     box-shadow var(--dur-2) var(--ease-out);
 }
 /* Open = a neutral input surface with a hairline, not a gold slab: the accent
    collapses back into the small Ask button inside it. The glass look is
-   collapsed-only — open resets to a plain solid surface. */
+   collapsed-only — open resets to a plain solid surface.
+
+   Geometry: the open bar spans the editor's READABLE COLUMN, not the pane.
+   margin-right pulls the pill's corner anchor in to the text's right edge and
+   width matches the text span, so the Ask button glides from the corner into
+   the writable area on open and back out on collapse (both properties share
+   the width transition above). The vars are measured off the live editor by
+   AskBar.tsx — the column's position depends on --center-pad-l/r AND the
+   scrollbar-gutter var scrollbarPadPlugin writes straight onto the scroller,
+   which a rule at this level can't read. The fallbacks reproduce the old
+   pane-wide bar if measurement ever fails. */
 .ask-wrap.is-open {
-  width: 100%; /* extend to the left panel (container already leaves the gap) */
+  width: var(--ask-open-w, 100%);
+  margin-right: var(--ask-open-mr, 0px);
   background: var(--elevated);
   border-color: var(--border);
   box-shadow: var(--shadow-pop);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+/* While the open bar is TRACKING a live layout change (dock toggle/drag, window
+   resize), AskBar.tsx re-measures per frame — easing toward a target that moves
+   every frame would trail the column, so tracking updates run with the
+   transition cut. Same idea as .app.is-resizing .cm-scroller. */
+.ask-bar--sync .ask-wrap {
+  transition: none;
 }
 /* Leading search glyph — hidden with the rest of the bar when collapsed, revealed
    at the far left when the bar extends. */
@@ -3316,6 +3465,9 @@
   padding: 0 10px;
   max-width: 100%;
   text-align: right;
+  /* Only ever rendered while the bar is open, so it shares the open bar's
+     column-aligned right edge instead of hugging the pane corner. */
+  margin-right: var(--ask-open-mr, 0px);
 }
 .ask-hint {
   font-size: 11.5px;
@@ -3414,6 +3566,34 @@
   outline: none;
   transform-origin: var(--transform-origin);
 }
+/* The strip of questions asked about one passage. It IS .wikilink-card__targets
+   — same wrapping chip row, same is-active pill, same hover transition — because
+   it is the same idea: pick one of several things this text points at, and read
+   it in the panel below. Only two things differ, and only those are restated
+   here.
+
+   1. The divider. In the link card the panel underneath carries it, so the strip
+      needs none; here the panel is the answer body, which has no border of its
+      own, so the strip has to draw the separator itself.
+   2. The bleed. .wikilink-card has no padding (its children pad themselves) while
+      .ask-pop pads 10px 12px — so the negative margins push the strip back out to
+      the card's edges, or the divider would float as a short rule in the middle
+      of the card instead of splitting it. The 6px horizontal padding then gives
+      the chip pills back the room they need not to kiss the border. */
+.ask-pop__strip {
+  margin: -4px -12px 8px;
+  padding: 2px 6px 6px;
+  border-bottom: 1px solid var(--divider);
+}
+/* The trailing "ask another about this passage" chip. Not a title, so it opts
+   out of the ellipsis machinery and just centres a glyph in the same pill. */
+.ask-pop__chip-add {
+  flex: none;
+  justify-content: center;
+  min-width: 22px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
 /* One-line echo of the asked-about text so the card stays anchored to meaning
    even after the selection highlight is gone. */
 .ask-pop__snippet {
@@ -3475,14 +3655,118 @@
   font-style: italic;
   margin-bottom: 4px;
 }
+/* The answer body holds RENDERED markdown (renderMarkdownBlocks emits real
+   <p>/<ul>/<table>/<pre> blocks), so no pre-wrap — the old rule doubled every
+   newline once actual block elements carried the spacing. The .cm-* inline
+   classes the renderer emits are styled inside EditorView.theme, which CM
+   scopes to .cm-editor — a body-portaled popup never matches those rules, so
+   the ones the answer can produce are restated compactly here. */
 .ask-pop__a {
   font-size: 13px;
   line-height: 1.55;
   color: var(--text-dim);
   max-height: 260px;
   overflow-y: auto;
-  white-space: pre-wrap;
   scrollbar-width: thin;
+}
+.ask-pop__a > .md-render > * {
+  margin: 0 0 8px;
+}
+.ask-pop__a > .md-render > *:last-child {
+  margin-bottom: 0;
+}
+/* Headings in a 340px card: readable steps down from 15px, not document scale. */
+.ask-pop__a h1,
+.ask-pop__a h2,
+.ask-pop__a h3,
+.ask-pop__a h4,
+.ask-pop__a h5,
+.ask-pop__a h6 {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
+  margin: 10px 0 4px;
+}
+.ask-pop__a h1 {
+  font-size: 15px;
+}
+.ask-pop__a h2 {
+  font-size: 14px;
+}
+.ask-pop__a ul,
+.ask-pop__a ol {
+  padding-left: 18px;
+}
+.ask-pop__a li {
+  margin: 2px 0;
+}
+.ask-pop__a blockquote {
+  margin: 0 0 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border);
+  color: var(--text-faint);
+}
+.ask-pop__a pre.md-code {
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+.ask-pop__a .cm-inline-code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.ask-pop__a .cm-table-wrap {
+  overflow-x: auto;
+}
+.ask-pop__a table.cm-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ask-pop__a table.cm-table th,
+.ask-pop__a table.cm-table td {
+  border: 1px solid var(--border);
+  padding: 3px 7px;
+  text-align: left;
+}
+.ask-pop__a .cm-wikilink {
+  color: var(--accent-text);
+  cursor: default;
+}
+.ask-pop__a .cm-wikilink:hover,
+.ask-pop__a .cm-link:hover {
+  text-decoration: underline;
+}
+.ask-pop__a .cm-link {
+  color: var(--accent-text);
+  cursor: default;
+}
+.ask-pop__a .cm-strike {
+  text-decoration: line-through;
+}
+.ask-pop__a .cm-highlight {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.ask-pop__a strong {
+  color: var(--text);
+}
+.ask-pop__a hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+.ask-pop__a img.cm-md-image {
+  max-width: 100%;
 }
 /* Hint styled as the app's uppercase badge voice because it's chrome, not
    content. */

@@ -1,7 +1,7 @@
 import { type MarkdownConfig, InlineContext } from "@lezer/markdown";
 
 export const ObsidianMarkdownExtension: MarkdownConfig = {
-  defineNodes: ["Wikilink", "WikilinkMark", "WikilinkPath", "WikilinkText", "Embed", "EmbedMark", "Tag", "TagMark", "Callout", "CalloutMark", "CalloutType", "CalloutTitle"],
+  defineNodes: ["Wikilink", "WikilinkMark", "WikilinkPath", "WikilinkText", "WikilinkId", "Embed", "EmbedMark", "Tag", "TagMark", "Callout", "CalloutMark", "CalloutType", "CalloutTitle"],
   parseInline: [
     {
       name: "Wikilink",
@@ -14,19 +14,39 @@ export const ObsidianMarkdownExtension: MarkdownConfig = {
         if (!isEmbed && (next !== 91 /* '[' */ || cx.char(pos + 1) !== 91)) return -1;
         const open = isEmbed ? pos + 1 : pos; // first '[' of "[["
 
+        // A backslash escapes ONLY the four grammar characters (\ | [ ]) —
+        // graph/wikilinkParse's isEscape, mirrored here. A lone backslash is a
+        // literal, so a label ending in one ("C:\Users\") cannot swallow the
+        // link's own closing bracket.
+        const escapable = (c: number) =>
+          c === 92 /* \ */ || c === 124 /* | */ || c === 91 /* [ */ || c === 93 /* ] */;
+
+        // Escape-aware "]]" scan, STOPPING AT A LINE BREAK. The stop matters:
+        // @lezer/markdown hands a whole paragraph to the inline parser as one
+        // context with its lines joined by "\n", so without it "[[Foo" on one
+        // line and "bar]]" on the next tokenize as a live link — one the text
+        // grammar (linkScan, which excludes \n) does not recognise, leaving a
+        // link the editor renders and opens but the graph, rename and hover
+        // machinery are all blind to.
         let end = -1;
         for (let i = open + 2; i < cx.end; i++) {
-          if (cx.char(i) === 93 /* ']' */ && cx.char(i + 1) === 93 /* ']' */) {
+          const c = cx.char(i);
+          if (c === 10 /* '\n' */) break;
+          if (c === 92 /* '\' */ && escapable(cx.char(i + 1))) {
+            i++; // skip the escaped char
+          } else if (c === 93 /* ']' */ && cx.char(i + 1) === 93 /* ']' */) {
             end = i;
             break;
           }
         }
         if (end === -1 || end === open + 2) return -1; // unclosed or empty [[]]
 
-        // Find pipe for alias
+        // Find the first UNESCAPED pipe (segment separator, never an alias).
         let pipePos = -1;
         for (let i = open + 2; i < end; i++) {
-          if (cx.char(i) === 124 /* '|' */) {
+          const c = cx.char(i);
+          if (c === 92 /* '\' */ && escapable(cx.char(i + 1))) i++;
+          else if (c === 124 /* '|' */) {
             pipePos = i;
             break;
           }
@@ -45,7 +65,42 @@ export const ObsidianMarkdownExtension: MarkdownConfig = {
 
         elts.push(cx.elt(markName, end, end + 2));
 
-        return cx.addElement(cx.elt(nodeType, pos, end + 2, elts));
+        // The hidden id parenthetical: "]](id:SLOT,SLOT,…)" directly after the
+        // closing brackets (compound form — see graph/wikilinkParse's header).
+        // Consumed INTO the Wikilink node so the whole link is one syntax node:
+        // the live preview hides the WikilinkId region unconditionally, and the
+        // reveal/click/menu walks all see one range. Strict charset: anything
+        // else after "]]" is ordinary text (or a real markdown link — which the
+        // built-in Link parser would only mis-claim if we consumed loosely
+        // here). Embeds never carry one (they resolve by title).
+        let nodeEnd = end + 2;
+        if (!isEmbed && cx.char(nodeEnd) === 40 /* '(' */) {
+          // "(id:" then [A-Za-z0-9_,]+ then ")"
+          if (
+            cx.char(nodeEnd + 1) === 105 /* 'i' */ &&
+            cx.char(nodeEnd + 2) === 100 /* 'd' */ &&
+            cx.char(nodeEnd + 3) === 58 /* ':' */
+          ) {
+            let j = nodeEnd + 4;
+            while (j < cx.end) {
+              const c = cx.char(j);
+              const slotChar =
+                (c >= 48 && c <= 57) || // 0-9
+                (c >= 65 && c <= 90) || // A-Z
+                (c >= 97 && c <= 122) || // a-z
+                c === 95 /* '_' */ ||
+                c === 44; /* ',' */
+              if (!slotChar) break;
+              j++;
+            }
+            if (j > nodeEnd + 4 && cx.char(j) === 41 /* ')' */) {
+              elts.push(cx.elt("WikilinkId", nodeEnd, j + 1));
+              nodeEnd = j + 1;
+            }
+          }
+        }
+
+        return cx.addElement(cx.elt(nodeType, pos, nodeEnd, elts));
       },
       before: "Link"
     },

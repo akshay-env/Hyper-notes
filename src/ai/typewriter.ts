@@ -16,6 +16,10 @@ import { StateField, StateEffect } from "@codemirror/state";
 
 const FADE_MS = 260; // how long a just-typed span keeps its fade-in decoration
 
+/// How long the scroller must sit still before we ask whether the reader has come
+/// back to the tail. This is the whole reason scrolling away works: see watchReader.
+const REARM_SETTLE_MS = 180;
+
 // Keys that scroll the note. Pressed in the body, they mean the reader is driving —
 // the same signal as a wheel notch (see Typewriter.watchReader).
 const NAV_KEYS = new Set(["PageUp", "PageDown", "ArrowUp", "ArrowDown", "Home", "End"]);
@@ -69,6 +73,8 @@ export class Typewriter {
   // measurement: see watchReader() for why measuring geometry each frame cannot work.
   private following = true;
   private unwatch: (() => void) | null = null;
+  // Pending re-arm check, scheduled once the scroller goes quiet. 0 = none.
+  private rearmTimer = 0;
 
   constructor(
     private view: EditorView,
@@ -199,16 +205,40 @@ export class Typewriter {
   // Re-arming is the mirror trick: while we are NOT following we never scroll the view
   // ourselves, so in that state every "scroll" event is by definition the reader's, and
   // it is safe to consult geometry there to notice they have come back to the tail.
+  //
+  // But "the reader's" is not the same as "the reader has finished". Re-arming
+  // straight off the scroll event is what used to make it impossible to scroll away
+  // from an answer at all, and it fails for the SAME reason the release path can't be
+  // driven by geometry: a wheel notch is not one jump. Chromium animates it over
+  // several frames at ~12-25px each, so the first few frames of a ~100px notch have
+  // moved less than `slack` and still measure as "at the tail" — we re-arm, the next
+  // insert scrolls straight back, and the notch nets to zero. The reader hauls on the
+  // wheel and the view refuses to move.
+  //
+  // So the re-arm check is DEBOUNCED rather than sampled: every scroll event pushes it
+  // back, and it only runs once the scroller has been still for REARM_SETTLE_MS. That
+  // measures the position the reader actually chose instead of a frame somewhere in
+  // the middle of their gesture.
   private watchReader(): void {
     const { scrollDOM, contentDOM } = this.view;
     // Any deliberate scroll gesture hands control over. Direction is not tested: a
-    // downward gesture immediately re-arms below if it lands at the tail, so treating
-    // every gesture the same costs nothing and keeps this branch-free.
+    // downward gesture re-arms below once it settles at the tail, so treating every
+    // gesture the same costs nothing and keeps this branch-free. Cancelling the
+    // pending check matters — a settle armed by the tail end of the PREVIOUS gesture
+    // must not fire in the middle of this one.
     const release = () => {
       this.following = false;
+      this.cancelRearm();
     };
-    const rearm = () => {
-      if (!this.following && this.atTail()) this.following = true;
+    const settle = () => {
+      // While following, the scrolling is ours and there is nothing to re-arm;
+      // scheduling here would churn a timer on every frame of the answer.
+      if (this.following) return;
+      this.cancelRearm();
+      this.rearmTimer = window.setTimeout(() => {
+        this.rearmTimer = 0;
+        if (!this.following && this.atTail()) this.following = true;
+      }, REARM_SETTLE_MS);
     };
     const onKey = (e: KeyboardEvent) => {
       if (NAV_KEYS.has(e.key)) release();
@@ -216,14 +246,20 @@ export class Typewriter {
 
     scrollDOM.addEventListener("wheel", release, { passive: true });
     scrollDOM.addEventListener("touchmove", release, { passive: true });
-    scrollDOM.addEventListener("scroll", rearm, { passive: true });
+    scrollDOM.addEventListener("scroll", settle, { passive: true });
     contentDOM.addEventListener("keydown", onKey);
     this.unwatch = () => {
+      this.cancelRearm();
       scrollDOM.removeEventListener("wheel", release);
       scrollDOM.removeEventListener("touchmove", release);
-      scrollDOM.removeEventListener("scroll", rearm);
+      scrollDOM.removeEventListener("scroll", settle);
       contentDOM.removeEventListener("keydown", onKey);
     };
+  }
+
+  private cancelRearm(): void {
+    if (this.rearmTimer) clearTimeout(this.rearmTimer);
+    this.rearmTimer = 0;
   }
 
   // Detach the reader listeners. Idempotent, and called on BOTH exits — stop() and the

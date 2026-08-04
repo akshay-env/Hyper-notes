@@ -5,7 +5,9 @@
 import { createSignal } from "solid-js";
 import { type Tab } from "./vaultTypes";
 import { createFolder, createNote, renameNode, moveNode, replaceTree, getNode, noteBasenameCount } from "./vault";
-import { createDoc, renameDoc, replaceDocs, rewriteLinksForRename } from "./documents";
+import { createDoc, readDoc, renameDoc, replaceDocs, rewriteLinksForRename, hasLinkTo } from "./documents";
+import { ensureNoteId } from "./noteId";
+import { noteIdOf } from "../graph/wikilinkParse";
 import { moveToBin, loadBinEntries } from "./bin";
 import { flushEditor, reloadEditorDoc } from "./editor";
 import { isTauri } from "./platform";
@@ -369,13 +371,31 @@ export function renamePath(path: string, newName: string): string | null {
   // BEFORE the link rewrites so a note that links to itself gets its renamed file
   // written after the move (not overwritten by it).
   if (root) renamePathFs(root, path, res.newPath).catch((e) => console.error("rename:", e));
-  // Repoint [[oldTitle]] links across the vault → the new title, but only when
-  // the rename is unambiguous (no other note still carries the old basename, so
-  // those links can only have meant this note).
+  // Propagate the rename into links (graph/wikilinkParse's LABELS contract):
+  //   • TITLE-TRACKING segments — slot pins this note's id AND the text still
+  //     reads as the old title — follow the rename instantly, vault-wide. The
+  //     id makes that unambiguous, so it is not gated. Prose labels (an Ask-AI
+  //     passage, or a label the user broke from the title) are never touched:
+  //     renames must not edit other notes' prose (the original user-reported
+  //     bug this design exists to prevent).
+  //   • TITLE-RESOLVED segments (bare [[oldTitle]] links, "_" slots) resolve by
+  //     that text, so they must be rewritten or they break — but only when the
+  //     rename is unambiguous (no other note still answers to the old name).
+  //     The rewrite also FILLS their slot with this note's id: the rename just
+  //     proved which note the title meant, so the link comes out rename-proof.
+  // The id is minted only when a title-referrer actually exists (hasLinkTo
+  // gates it — an unlinked note never grows frontmatter for nothing); a note
+  // that already HAS an id keeps it, and that existing id is what the
+  // title-tracking sweep matches on.
   const newTitle = res.newPath.split("/").pop()!.replace(/\.md$/i, "");
-  if (wasNote && oldTitle.toLowerCase() !== newTitle.toLowerCase() && noteBasenameCount(oldTitle) === 0) {
-    rewriteLinksForRename(oldTitle, newTitle);
-    reloadEditorDoc(); // reflect the rewrite in the open note if it links here
+  if (wasNote && oldTitle.toLowerCase() !== newTitle.toLowerCase()) {
+    let id = noteIdOf(readDoc(res.newPath)) ?? "";
+    const bareOk = noteBasenameCount(oldTitle) === 0;
+    if (bareOk && !id && hasLinkTo(oldTitle)) id = ensureNoteId(res.newPath);
+    if (id || bareOk) {
+      rewriteLinksForRename(oldTitle, newTitle, id, bareOk);
+      reloadEditorDoc(); // reflect the rewrite in the open note if it links here
+    }
   }
   return res.newPath;
 }
@@ -575,15 +595,23 @@ export const [rightPanelWidth, _setRightPanelWidth] = createSignal(loadWidth("hl
 export const [resizing, setResizing] = createSignal(false);
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-export function setSidebarWidth(v: number) {
+// `persist` exists for the drag path only. localStorage.setItem is SYNCHRONOUS, and
+// a drag calls these on every pointermove — 100+ times a second on a high-polling
+// mouse, on the main thread, in the middle of the most layout-heavy interaction the
+// app has. The signal still updates on every move (the edge has to track the pointer
+// 1:1), but ResizeHandle passes persist:false there and writes the final width once
+// on release. Defaulting to true keeps every other caller — the reset helpers below,
+// and anything added later that sets a width outside a drag — writing through as
+// before, so forgetting the argument can never silently lose a width.
+export function setSidebarWidth(v: number, persist = true) {
   const w = clamp(v, SIDEBAR_MIN, SIDEBAR_MAX);
   _setSidebarWidth(w);
-  saveWidth("hln.sidebarWidth", w);
+  if (persist) saveWidth("hln.sidebarWidth", w);
 }
-export function setRightPanelWidth(v: number) {
+export function setRightPanelWidth(v: number, persist = true) {
   const w = clamp(v, RIGHT_MIN, RIGHT_MAX);
   _setRightPanelWidth(w);
-  saveWidth("hln.rightPanelWidth", w);
+  if (persist) saveWidth("hln.rightPanelWidth", w);
 }
 export function resetSidebarWidth() {
   setSidebarWidth(SIDEBAR_DEFAULT);

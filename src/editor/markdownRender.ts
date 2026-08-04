@@ -4,6 +4,13 @@
 // fixed set of tags below.
 import katex from "katex";
 import { isHex } from "../theme/colorEngine";
+import {
+  parseIdTargets,
+  parseIdSlots,
+  splitRawSegments,
+  unescapeSegment,
+  wikilinkDisplaySpan,
+} from "../graph/wikilinkParse";
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
@@ -11,32 +18,125 @@ export function escapeHtml(s: string): string {
   );
 }
 
+// The rendered HTML for one note link, from RAW (unescaped) source text.
+//
+// The attribute contract is byte-identical to the live preview's, because the
+// same hover/click code reads both (editor/wikilinkInteractions):
+//   • data-wikilink  — the raw inner text, always. Titles are how a "_" slot
+//     resolves, so this must survive even on a fully-pinned link.
+//   • data-note-id   — SLOT 0 only, and only when it is real. Not "the first
+//     real id anywhere in the list": on [[Alpha|Beta]](id:_,Y) that would make
+//     a click open Beta while the visible label says Alpha, i.e. the rendered
+//     copy of a link would open a different note than the editor's copy.
+//   • data-link-slots — the whole positional list ("_" included), so a consumer
+//     can rebuild every target exactly, sentinels and all.
+// Values are escaped for attribute context; ids come out of the slot charset.
+function noteLinkSpan(inner: string, slots: (string | null)[] | null): string {
+  const slot0 = slots?.[0] ?? null;
+  // The label the editor shows: first segment, unescaped, and with a #/^ anchor
+  // dropped ONLY when the segment resolves by title (see wikilinkDisplaySpan —
+  // a pinned segment's text is a label and may legitimately contain #/^).
+  const { start, end } = wikilinkDisplaySpan(inner, !slot0);
+  const label = unescapeSegment(inner.slice(start, end)) || unescapeSegment(inner);
+  const attrs = [`data-wikilink="${escapeHtml(inner)}"`];
+  if (slot0) attrs.push(`data-note-id="${slot0}"`);
+  if (slots) attrs.push(`data-link-slots="${slots.map((s) => s ?? "_").join(",")}"`);
+  return `<span class="cm-wikilink" ${attrs.join(" ")}>${escapeHtml(label)}</span>`;
+}
+
+function renderMath(src: string, block: boolean): string {
+  try {
+    return katex.renderToString(src, { displayMode: block, throwOnError: false });
+  } catch {
+    return escapeHtml(src);
+  }
+}
+
 // Inline markdown → HTML (bold/italic/code/strike/highlight/links/wikilinks/
 // images/inline math). Wikilinks keep data-wikilink so the app-wide hover/click
 // handlers work inside rendered content too.
 export function renderInline(raw: string): string {
-  // Bare URL literals ("https://…", "www.…" — no [text](url) wrapper) are
-  // found and swapped for a null-byte placeholder BEFORE escapeHtml() and
-  // every pass below runs. Matching after escaping would also catch a
-  // "https://" hiding inside an already-&lt;…&gt;-escaped angle-bracket
-  // autolink, or inside the data-href="…" attribute the [text](url) pass
-  // below is about to write — either would corrupt the resulting markup.
-  // The lookbehind skips a match immediately after "](": that's an existing
-  // link/image destination, already owned by the passes below. Backtick is
-  // excluded from the match body (unlike @lezer/markdown's own autolinker,
-  // which never sees one — its tokenizer claims `code` before plain text is
-  // scanned) so a URL inside `inline code` doesn't eat the closing backtick.
-  // Inline-code spans are verbatim: a URL between backticks must stay literal
-  // text, the same way the CM parser's autolinker never runs inside a code
-  // span. The ranges are measured on the same raw string the URL scan below
-  // runs over (both happen before escapeHtml), so offset containment is exact.
-  const codeSpans: Array<[number, number]> = [];
-  for (const cm of raw.matchAll(/`[^`]+`/g)) {
-    codeSpans.push([cm.index, cm.index + cm[0].length]);
-  }
-  const bareUrls: string[] = [];
-  raw = raw.replace(/(?<!\]\()\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi, (m, offset: number) => {
-    if (codeSpans.some(([s, e]) => offset >= s && offset < e)) return m;
+  // ── Two-phase render ────────────────────────────────────────────────────────
+  // Every construct that either (a) must stay VERBATIM or (b) injects markup of
+  // its own is lifted out of the text FIRST, replaced by a null-byte
+  // placeholder, and swapped back only after the remaining passes have run.
+  //
+  // This is not tidiness; it is the only way the later passes can be correct.
+  // They are plain regexes over one accumulated string, so anything already
+  // injected is in their line of fire: the italic pass rewrites *big* inside a
+  // data-wikilink="my *big* idea" attribute (making a click create a note named
+  // "em idea"), the __ pass injects <strong> into a data-href URL, and both
+  // rewrite the inside of a <code> span that is supposed to be literal.
+  //
+  // Lifting BEFORE escapeHtml is equally load-bearing for labels: computing a
+  // label from already-escaped text means an apostrophe arrives as "&#39;" and
+  // the #-anchor drop truncates the label at the "#" inside that entity —
+  // "Bob's note" renders as "Bob&". Here every label is sliced from raw text and
+  // escaped once, at the end, as element content.
+  const slots: string[] = [];
+  const ph = (html: string) => {
+    slots.push(html);
+    return `\0${slots.length - 1}\0`;
+  };
+
+  // 1. Inline code — verbatim by definition, so it goes first and nothing else
+  //    ever sees its body.
+  raw = raw.replace(/`([^`]+)`/g, (_m, c: string) => ph(`<code class="cm-inline-code">${escapeHtml(c)}</code>`));
+  // 2. Math ($$…$$ before $…$, so the inline rule can't half-match the double
+  //    delimiters). KaTeX emits a whole tree of markup — prime corruption bait.
+  raw = raw.replace(/\$\$([^$]+?)\$\$/g, (_m, src: string) => ph(renderMath(src, true)));
+  raw = raw.replace(/\$([^$\n]+?)\$/g, (_m, src: string) => ph(renderMath(src, false)));
+  // 3. Images, then embeds — both start "![", and the image regex needs a "("
+  //    so it can never claim an ![[embed]].
+  raw = raw.replace(/!\[([^\]]*)\]\(([^)\n]+)\)/g, (_m, a: string, u: string) =>
+    ph(`<img class="cm-md-image" src="${escapeHtml(u)}" alt="${escapeHtml(a)}"/>`),
+  );
+  raw = raw.replace(/!\[\[((?:\\.|[^\\\]\n])+)\]\]/g, (_m, inner: string) => {
+    const label = unescapeSegment(splitRawSegments(inner)[0].raw).trim() || unescapeSegment(inner);
+    return ph(`<span class="cm-embed">⧉ ${escapeHtml(label)}</span>`);
+  });
+  // 4. Compound note links BEFORE the bare pass, or [[A]] would match and leave
+  //    the "(id:…)" tail behind as visible text. A malformed slot list is left
+  //    alone (it is not a note link — the same verdict noteLinkParts and the
+  //    graph reach), so it falls through to the passes below as ordinary text.
+  raw = raw.replace(
+    /\[\[((?:\\.|[^\\\]\n])+)\]\]\((id:[A-Za-z0-9_,]+)\)/g,
+    (m, inner: string, dest: string) => {
+      const parsed = parseIdSlots(dest);
+      return parsed.length ? ph(noteLinkSpan(inner, parsed)) : m;
+    },
+  );
+  raw = raw.replace(/\[\[((?:\\.|[^\\\]\n])+)\]\]/g, (_m, inner: string) =>
+    ph(noteLinkSpan(inner, null)),
+  );
+  // 5. Legacy [display](id:X) — read-only compat, before the generic URL pass
+  //    or that would claim it. The "!" guard mirrors the grammar's legacyScan:
+  //    "![x](id:y)" is an image, not a note link.
+  raw = raw.replace(
+    /(?<!!)\[([^\]\n]+)\]\(\s*(id:[A-Za-z0-9,]+)\s*\)/g,
+    (m, t: string, dest: string) => {
+      const ids = parseIdTargets(dest);
+      if (!ids.length) return m;
+      // The old form escaped only "[" in its display; undo that for display.
+      const label = t.replace(/\\\[/g, "[");
+      return ph(
+        `<span class="cm-wikilink" data-note-id="${ids[0]}" data-note-ids="${ids.join(",")}">${escapeHtml(label)}</span>`,
+      );
+    },
+  );
+  // 6. Ordinary [text](url) links. data-href lets the click handlers open them
+  //    from rendered content too — table cells route it via the cell's own
+  //    mousedown listener, editor content via externalLinkInteractions.
+  raw = raw.replace(
+    /\[([^\]\n]+)\]\(([^)\n]+)\)/g,
+    (_m, t: string, u: string) =>
+      ph(`<span class="cm-link" data-href="${escapeHtml(u)}">${escapeHtml(t)}</span>`),
+  );
+  // 7. Bare URL literals ("https://…", "www.…" — no [text](url) wrapper). Every
+  //    wrapped destination and every code span is already a placeholder by now,
+  //    so this can no longer match inside one and needs no lookbehind or
+  //    code-span exclusion of its own.
+  raw = raw.replace(/\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi, (m) => {
     // Walk trailing sentence punctuation (and an unopened ")") off the match —
     // the same trim @lezer/markdown's own bare-URL autolinker applies — so
     // "see https://x.com." links to x.com, not x.com.
@@ -52,46 +152,14 @@ export function renderInline(raw: string): string {
       else break;
     }
     const url = m.slice(0, end);
-    const trailer = m.slice(end);
     const href = /^www\./i.test(url) ? `https://${url}` : url;
-    bareUrls.push(`<span class="cm-link" data-href="${escapeHtml(href)}">${escapeHtml(url)}</span>`);
-    return `\0${bareUrls.length - 1}\0${trailer}`;
+    return (
+      ph(`<span class="cm-link" data-href="${escapeHtml(href)}">${escapeHtml(url)}</span>`) +
+      m.slice(end)
+    );
   });
 
   let h = escapeHtml(raw);
-  h = h.replace(/`([^`]+)`/g, (_m, c) => `<code class="cm-inline-code">${c}</code>`);
-  // $$…$$ before single-$: display math, and keeps the inline rule from
-  // half-matching the double delimiters.
-  h = h.replace(/\$\$([^$]+?)\$\$/g, (_m, src) => {
-    try {
-      return katex.renderToString(src, { displayMode: true, throwOnError: false });
-    } catch {
-      return escapeHtml(src);
-    }
-  });
-  h = h.replace(/\$([^$\n]+?)\$/g, (_m, src) => {
-    try {
-      return katex.renderToString(src, { throwOnError: false });
-    } catch {
-      return escapeHtml(src);
-    }
-  });
-  h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, a, u) => `<img class="cm-md-image" src="${u}" alt="${a}"/>`);
-  h = h.replace(/!\[\[([^\]]+)\]\]/g, (_m, inner) => {
-    const label = (inner.split("|")[0] || inner).trim();
-    return `<span class="cm-embed">⧉ ${label}</span>`;
-  });
-  h = h.replace(/\[\[([^\]]+)\]\]/g, (_m, inner) => {
-    const label = (inner.split("|")[0] || inner).replace(/[#^].*$/, "") || inner;
-    return `<span class="cm-wikilink" data-wikilink="${inner}">${label}</span>`;
-  });
-  // data-href (already HTML-escaped with the rest of the string) lets the click
-  // handlers open the link from rendered content too — table cells route it via
-  // the cell's own mousedown listener, editor content via externalLinkInteractions.
-  h = h.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    (_m, t, u) => `<span class="cm-link" data-href="${u}">${t}</span>`,
-  );
   h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   h = h.replace(/__([^_]+)__/g, "<strong>$1</strong>");
   h = h.replace(/\*([^*]+)\*/g, "<em>$1</em>");
@@ -112,11 +180,9 @@ export function renderInline(raw: string): string {
       return `<span class="cm-highlight"${safeHex ? ` style="background-color:${safeHex}"` : ""}>${inner}</span>`;
     },
   );
-  // Swap the bare-URL placeholders back in last, once everything around them
-  // is finished HTML — any earlier pass (bold/highlight/…) matching text
-  // inside the span this produces would be the same corruption this two-step
-  // dance exists to avoid.
-  h = h.replace(/\0(\d+)\0/g, (_m, i) => bareUrls[Number(i)]);
+  // Swap every lifted construct back in last, once the text around it is
+  // finished HTML — this is the half that makes phase one worth doing.
+  h = h.replace(/\0(\d+)\0/g, (_m, i) => slots[Number(i)]);
   return h;
 }
 

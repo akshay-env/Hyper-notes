@@ -88,6 +88,27 @@ export function serializeYaml(entries: PropEntry[]): string {
     .join("\n");
 }
 
+// ── Hidden keys ───────────────────────────────────────────────────────────────
+// Frontmatter keys the panel never DISPLAYS (it still carries them in the
+// document, and still writes them back on every commit — see below).
+//
+// `id` is the note's stable identity (state/noteId.ts): minted by a rename or by
+// "Ask AI → save as note", and the anchor every [display](id:XYZ) link in the
+// vault resolves through. Rendering it as a row put a raw hex token in the
+// reader's face and, worse, an "×" button next to it — one click silently broke
+// every inbound link with no visible cause and no undo the user would connect to
+// it. It is machine identity, not a property of the note's content, so it is
+// hidden from the UI and left untouched in the text.
+const HIDDEN_KEYS = new Set(["id"]);
+const isHiddenKey = (key: string) => HIDDEN_KEYS.has(key.trim().toLowerCase());
+
+// The rows the panel would actually show. Used ONLY to decide whether there is a
+// panel worth drawing — never to build the array the widget commits from. See
+// the warning in PropertiesWidget.toDOM.
+function visibleEntries(yaml: string): PropEntry[] {
+  return parseYaml(yaml).filter((e) => !isHiddenKey(e.key));
+}
+
 // ── Widget ────────────────────────────────────────────────────────────────────
 class PropertiesWidget extends WidgetType {
   constructor(readonly yaml: string) {
@@ -97,6 +118,13 @@ class PropertiesWidget extends WidgetType {
     return o.yaml === this.yaml;
   }
   toDOM(view: EditorView) {
+    // `entries` is the COMPLETE frontmatter, hidden keys included, and it must
+    // stay that way. commit() below replaces the whole --- block with
+    // serializeYaml(next), and every `next` is built by map/filter over THIS
+    // array — so filtering it here (rather than skipping the row at render time,
+    // as the loop does) would make editing any other property, adding one, or
+    // deleting one silently drop the note's `id` and break every link pointing
+    // at it. Row indices are indices into the full array for the same reason.
     const entries = parseYaml(this.yaml);
     const readOnly = view.state.readOnly;
     const root = document.createElement("div");
@@ -119,6 +147,7 @@ class PropertiesWidget extends WidgetType {
     const rows = document.createElement("div");
     rows.className = "cm-properties__rows";
     entries.forEach((entry, idx) => {
+      if (isHiddenKey(entry.key)) return; // render-time skip only — `entries` stays whole
       const row = document.createElement("div");
       row.className = "cm-properties__row";
 
@@ -185,11 +214,50 @@ class PropertiesWidget extends WidgetType {
   // Default ignoreEvent (true): the editor leaves the panel's inputs alone.
 }
 
+// Frontmatter that has nothing left to show once the hidden keys are dropped —
+// overwhelmingly the common case, because withNoteId (graph/wikilinkParse)
+// creates a bare `---\nid: XYZ\n---` on a note that had no frontmatter at all.
+// An empty "Properties" box above every linked-to note is noise, so the block
+// collapses to nothing.
+//
+// It is still a replace-with-widget over the WHOLE frontmatter range, not
+// Decoration.none, for two independent reasons:
+//   • Decoration.none would leave the raw "---\nid: …\n---" visible as text —
+//     exactly the leak we are hiding.
+//   • noteTitle.ts's bodyStart() decides where the caret lands when Enter is
+//     pressed in the inline title by scanning view.lineBlockAt(0) for a
+//     BlockType.WidgetRange with length > 0. Without a non-zero-length replacing
+//     widget it hands back 0, and the first character typed after a rename lands
+//     in front of the opening "---" and destroys the frontmatter.
+// Height comes from inline styles because this module may not touch chrome.css.
+class HiddenFrontmatterWidget extends WidgetType {
+  // Stateless: every instance renders the same nothing. What matters is that it
+  // is a DIFFERENT class from PropertiesWidget — CM6 compares widgets by
+  // constructor first, so gaining or losing the last visible property always
+  // swaps the widget and forces a re-render.
+  eq(_o: HiddenFrontmatterWidget) {
+    return true;
+  }
+  toDOM() {
+    const el = document.createElement("div");
+    el.setAttribute("aria-hidden", "true");
+    el.style.display = "block";
+    el.style.height = "0";
+    el.style.margin = "0";
+    el.style.padding = "0";
+    el.style.overflow = "hidden";
+    return el;
+  }
+}
+
 function buildProperties(state: EditorState): DecorationSet {
   const fm = findFrontmatter(state);
   if (!fm) return Decoration.none;
+  const widget = visibleEntries(fm.yaml).length
+    ? new PropertiesWidget(fm.yaml)
+    : new HiddenFrontmatterWidget();
   return Decoration.set([
-    Decoration.replace({ widget: new PropertiesWidget(fm.yaml), block: true }).range(fm.from, fm.to),
+    Decoration.replace({ widget, block: true }).range(fm.from, fm.to),
   ]);
 }
 

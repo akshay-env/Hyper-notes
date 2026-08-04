@@ -19,11 +19,45 @@ import katex from "katex";
 import { CalloutIconWidget, defaultCalloutTitle, resolveCallout } from "./callouts";
 import { renderInline, renderMarkdownBlocks } from "./markdownRender";
 import { resolveNoteByTitle, wikilinkExists } from "../state/wikilink";
-import { parseWikilinkInner, wikilinkDisplaySpan } from "../graph/wikilinkParse";
+import { findPathById } from "../state/noteId";
+// linkDestination / idLinkTarget used to be declared HERE and imported from
+// here. They moved into graph/wikilinkParse — a zero-import leaf — because
+// state/wikilink's "Add note" needs them too, and this module imports
+// state/wikilink (wikilinkExists), so the reverse import would have closed a
+// cycle. Nothing about their behaviour changed; see their comments there.
+import {
+  parseWikilinkInner,
+  wikilinkDisplaySpan,
+  parseIdTargets,
+  linkDestination,
+  idLinkTarget,
+  noteLinkParts,
+  slotFor,
+} from "../graph/wikilinkParse";
 import { selectNoteByPath } from "../state/ui";
 import { isHex, readable } from "../theme/colorEngine";
 
 // ── Widgets ───────────────────────────────────────────────────────────────────
+// An `ignoreEvent` implementation for the two widgets that RENDER note content
+// of their own (the table, the embed card): ignore everything except events
+// aimed at a link.
+//
+// It is needed because CM6 drops a DOM event outright when any widget between
+// the target and .cm-content says it owns it (eventBelongsToEditor walks the
+// ancestors and consults ContentView.ignoreEvent), and WidgetType's default
+// answer is "mine". So with no override, a wikilink rendered inside a table
+// cell or an embed card is completely inert: the hover card never opens and a
+// click does nothing — even though the cell's own mousedown handler
+// deliberately steps aside for links ("Links keep their own behaviour: the
+// CM-level handlers open them"), which is a promise nothing was keeping.
+//
+// Narrow on purpose. Ceding every event would hand CM the clicks that place the
+// caret inside a cell, which those widgets implement themselves and better.
+function linkEventsOnly(event: Event): boolean {
+  const t = event.target as HTMLElement | null;
+  return !t?.closest?.(".cm-wikilink, [data-href]");
+}
+
 class HRWidget extends WidgetType {
   toDOM() {
     const el = document.createElement("span");
@@ -108,6 +142,11 @@ class EmbedWidget extends WidgetType {
   eq(o: EmbedWidget) {
     return o.target === this.target && o.version === this.version;
   }
+  // Let LINK events reach the editor's own handlers; keep everything else.
+  // See linkEventsOnly for why this is needed at all.
+  ignoreEvent(event: Event) {
+    return linkEventsOnly(event);
+  }
   toDOM() {
     const resolved = resolveNoteByTitle(this.target);
     if (!resolved) {
@@ -186,6 +225,11 @@ class TableWidget extends WidgetType {
   // widget (and fresh click handlers with the right offsets) must be built.
   eq(o: TableWidget) {
     return o.src === this.src && o.from === this.from;
+  }
+  // Let LINK events reach the editor's own handlers; keep everything else.
+  // See linkEventsOnly for why this is needed at all.
+  ignoreEvent(event: Event) {
+    return linkEventsOnly(event);
   }
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
@@ -457,7 +501,20 @@ function buildInline(view: EditorView): { deco: DecorationSet; atomic: Decoratio
   // leaves just that token raw. Every other node (Paragraph, ListItem, Document…)
   // must be descended so its inline children are each judged on their own —
   // otherwise a caret anywhere in a paragraph would blank the whole line.
-  const inlineNode = /^(StrongEmphasis|Emphasis|Strikethrough|InlineCode|Image|Link|Autolink|Wikilink|Embed|Tag)$/;
+  const inlineNode = /^(StrongEmphasis|Emphasis|Strikethrough|InlineCode|Image|Link|Autolink|Wikilink|Embed|Tag|Escape)$/;
+
+  // Id-link resolution memo for THIS rebuild: extraction writes one id link per
+  // line of a passage — all the same id — and a dead id misses noteId's cache
+  // every time. One lookup per distinct id per rebuild, not per link.
+  const idPath = new Map<string, string>();
+  const resolveId = (nid: string): string => {
+    let p = idPath.get(nid);
+    if (p === undefined) {
+      p = findPathById(nid);
+      idPath.set(nid, p);
+    }
+    return p;
+  };
 
   const tree = ensureSyntaxTree(state, doc.length, 100) ?? syntaxTree(state);
   tree.iterate({
@@ -476,7 +533,28 @@ function buildInline(view: EditorView): { deco: DecorationSet; atomic: Decoratio
       }
 
       // Per-token reveal: caret touching this inline token → leave it raw.
-      if (inlineNode.test(name) && active(node.from, node.to)) return false;
+      //
+      // TWO tokens are (partially) exempt, for the same reason: an id is
+      // machine identity — minted by a click, a completion pick, a rename or
+      // "Ask AI → save as note", never typed, never meaningfully editable — so
+      // revealing it just dumps a hex token into the middle of the user's
+      // prose. Every OTHER piece of markdown syntax is something the WRITER
+      // typed and may want to edit, so showing it under the caret is a feature.
+      //   • A compound wikilink ([[A]](id:X)) reveals ONLY its [[A]] half; the
+      //     (id:…) parenthetical stays hidden whether the caret is on the link
+      //     or not — its branch below handles the split, so it must fall
+      //     through here rather than return false (which would reveal all of
+      //     it, id included).
+      //   • A legacy id link ([display](id:XYZ)) stays fully rendered — its
+      //     display is prose and its destination is machine identity, so there
+      //     is nothing in it to hand-edit. An ordinary [text](url) link still
+      //     reveals: its URL IS hand-authored.
+      if (inlineNode.test(name) && active(node.from, node.to)) {
+        const text = doc.sliceString(node.from, node.to);
+        const isLegacyIdLink = name === "Link" && idLinkTarget(text) !== null;
+        const isCompound = name === "Wikilink" && (noteLinkParts(text)?.destFrom ?? -1) >= 0;
+        if (!isLegacyIdLink && !isCompound) return false;
+      }
 
       if (/^ATXHeading[1-6]$/.test(name)) {
         const level = +name.slice(-1);
@@ -507,35 +585,111 @@ function buildInline(view: EditorView): { deco: DecorationSet; atomic: Decoratio
         const m = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(doc.sliceString(node.from, node.to));
         if (m) widget(node.from, node.to, new ImageWidget(m[2], m[1]));
       } else if (name === "Link") {
-        const text = doc.sliceString(node.from, node.to);
-        const close = text.indexOf("](");
-        if (close > 0) {
-          // The URL travels on the rendered span (data-href) so a left-click can
-          // follow it (externalLinkInteractions) without the caret ever landing
-          // in the hidden "](url)" syntax. Strip an optional <…> wrapper and a
-          // trailing "title" — only the target itself is the href.
-          let url = text.slice(close + 2, -1).trim();
-          if (url.startsWith("<") && url.endsWith(">")) url = url.slice(1, -1);
-          url = url.split(/\s+/)[0] ?? "";
+        // The URL travels on the rendered span (data-href) so a left-click can
+        // follow it (externalLinkInteractions) without the caret ever landing in
+        // the hidden "](url)" syntax. linkDestination does the stripping, and is
+        // the same call the reveal exemption above makes — see its comment.
+        const d = linkDestination(doc.sliceString(node.from, node.to));
+        if (d) {
+          const { close, dest: url } = d;
           hide(node.from, node.from + 1);
-          mark(node.from + 1, node.from + close, "cm-link", url ? { "data-href": url } : undefined);
+          // An id: destination is a NOTE link ([display](id:XYZ)) — it renders
+          // and behaves as a wikilink (same class, same hover/click handlers via
+          // data-note-id), never as an external URL. Dead ids get the same
+          // "unresolved" dimming a [[link]] with no note gets.
+          //
+          // The destination is a LIST (id:AAA,BBB — see graph/wikilinkParse's
+          // header), so the span publishes BOTH attributes, exactly the contract
+          // markdownRender already emits for rendered (non-editor) content:
+          //   • data-note-id  — the FIRST id, i.e. what a plain left-click opens.
+          //     Unchanged in meaning, and deliberately mirroring the wikilink
+          //     rule that a left-click on [[A|B|C]] opens A.
+          //   • data-note-ids — the whole comma-joined list, for the consumers
+          //     that offer the OTHER targets (the hover card's row list; the
+          //     right-click menu reads the document instead, through
+          //     editor/linkRanges, because it needs the range as well).
+          // Both values come out of parseIdTargets' [A-Za-z0-9] + "," charset, so
+          // neither can carry anything that would break out of an attribute.
+          const ids = parseIdTargets(url);
+          if (ids.length) {
+            // Dimmed on the FIRST id failing to resolve, mirroring the wikilink
+            // branch below (which dims on parseWikilinkInner(inner).targets[0]):
+            // the shown/clicked target is the one the colour is about, and a link
+            // whose first note is alive is not an "unresolved link" just because
+            // a later target was binned. resolveId, not findPathById — a dead id
+            // misses the id cache and re-walks the whole vault, and this runs on
+            // every decoration rebuild.
+            const cls = resolveId(ids[0])
+              ? "cm-wikilink"
+              : "cm-wikilink cm-wikilink--new";
+            mark(node.from + 1, node.from + close, cls, {
+              "data-note-id": ids[0],
+              "data-note-ids": ids.join(","),
+            });
+          } else {
+            mark(node.from + 1, node.from + close, "cm-link", url ? { "data-href": url } : undefined);
+          }
           hide(node.from + close, node.to);
         }
+      } else if (name === "Escape") {
+        // A backslash escape (\[, \], \*, …): show the escaped character, hide
+        // the backslash — the same way every other marker is hidden when the
+        // caret isn't touching it. Without this, id links written around text
+        // containing brackets would leak visible backslashes into the prose.
+        hide(node.from, node.from + 1);
       } else if (name === "Wikilink") {
-        if (active(node.from, node.to)) return;
-        const inner = doc.sliceString(node.from + 2, node.to - 2);
-        // Show the alias for [[target|alias]] (the 2nd part), the first part
-        // otherwise; everything else in the [[ … ]] is hidden.
-        const { start, end } = wikilinkDisplaySpan(inner);
+        const raw = doc.sliceString(node.from, node.to);
+        const parts = noteLinkParts(raw);
+        if (!parts) return; // mid-edit mangled text — leave it raw
+        // The (id:…) parenthetical is hidden UNCONDITIONALLY — caret on the
+        // link or not, focused or not. It is machine bookkeeping (see the
+        // grammar header): the user sees and edits [[A|B]] and never the ids.
+        // The hide is atomic, so the caret can never land inside it either.
+        if (parts.destFrom >= 0) hide(node.from + parts.destFrom, node.to);
+        if (active(node.from, node.to)) return; // raw [[…]] for editing, id still hidden
+        const inner = parts.inner;
+        // Resolution for the dimming: the shown (first) target rides its SLOT
+        // when that slot holds a real id — dead id → dimmed, exactly like an
+        // unresolved title (clicking a dead id is a no-op though; see
+        // state/wikilink's openNoteById). A "_"/absent slot falls back to the
+        // segment title, the typed form's resolution.
+        const firstSlot = slotFor(parts.slots, 0);
+        // Show the FIRST segment ([[A]] → "A", [[A|B|…]] → "A"); everything
+        // else in the [[ … ]] is hidden. A "#heading"/"^block" suffix is hidden
+        // only for a TITLE-resolved segment, where it is resolution syntax; on
+        // a pinned segment the text is a label and may be prose containing #/^
+        // ("x^2 + y^2 dominates"), which must show whole — see
+        // wikilinkDisplaySpan.
+        const { start, end } = wikilinkDisplaySpan(inner, !firstSlot);
         const dispFrom = node.from + 2 + start;
         const dispTo = node.from + 2 + end;
-        // Dim links whose (first / shown) target has no note yet — clicking one
-        // creates it. Matches Obsidian's distinct "unresolved link" colour.
-        const first = parseWikilinkInner(inner).targets[0];
-        const cls = first && wikilinkExists(first) ? "cm-wikilink" : "cm-wikilink cm-wikilink--new";
+        const resolved = firstSlot
+          ? resolveId(firstSlot) !== ""
+          : (() => {
+              const first = parseWikilinkInner(inner).targets[0];
+              return !!first && wikilinkExists(first);
+            })();
+        const cls = resolved ? "cm-wikilink" : "cm-wikilink cm-wikilink--new";
+        // data-note-id travels on the span for consumers outside the editor's
+        // syntax tree (the hover/click handlers resolve through the tree first
+        // and use attributes only as the widget-context fallback). The value
+        // comes out of the slot charset, so it can't break out of an attribute.
+        const attrs: Record<string, string> = { "data-wikilink": inner };
+        if (firstSlot) attrs["data-note-id"] = firstSlot;
         hide(node.from, dispFrom);
-        mark(dispFrom, dispTo, cls, { "data-wikilink": inner });
-        hide(dispTo, node.to);
+        mark(dispFrom, dispTo, cls, attrs);
+        // Escape backslashes inside the shown label are hidden one by one, so
+        // a passage label written as "a \| b" reads exactly "a | b" on screen.
+        // The class matches the grammar's ESCAPABLE set exactly — including an
+        // escaped backslash ("\\"), whose leading slash must be hidden or a
+        // Windows path in a label would read with doubled separators.
+        const shown = doc.sliceString(dispFrom, dispTo);
+        const esc = /\\[\\|[\]]/g;
+        let em: RegExpExecArray | null;
+        while ((em = esc.exec(shown)) !== null) {
+          hide(dispFrom + em.index, dispFrom + em.index + 1);
+        }
+        hide(dispTo, parts.destFrom >= 0 ? node.from + parts.destFrom : node.to);
       } else if (name === "Embed") {
         if (active(node.from, node.to)) return;
         const inner = doc.sliceString(node.from + 3, node.to - 2);

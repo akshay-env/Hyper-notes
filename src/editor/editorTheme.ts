@@ -56,6 +56,12 @@ export const editorTheme = EditorView.theme(
       "--cm-task-alt-scale": "1.05",
       "--cm-bq-border": "3px",
       "--cm-bq-pad": "14px",
+      // Width of the readable column, border-box (so the 52px side pads on
+      // .cm-content live INSIDE it). Declared here rather than only as
+      // .cm-content's max-width because the scroller's centring pads below have
+      // to know how much room the column wants before they may steal any — two
+      // literals would drift apart the first time the measure is retuned.
+      "--cm-col-max": "920px",
     },
     ".cm-scroller": {
       // Vertical scroll only. Line wrapping is on, so the editor never needs to
@@ -79,14 +85,37 @@ export const editorTheme = EditorView.theme(
       // transition matches the docks' width animation (--dur-3/--ease-out), so
       // the column holds its place while a dock slides; chrome.css disables it
       // during a drag-resize (.app.is-resizing) just like the docks do.
-      // --cm-sbw cancels the one-sided scrollbar gutter: with a right-side
-      // gutter of width G the visible box is clientWidth + G wide, so padding
-      // the left by the same G lands the column dead on window-centre. Padding
-      // stays inside the border box, so — unlike a left gutter — it never
-      // shifts CM's layer origin. Overlay scrollbars measure G = 0 and the
-      // extra padding collapses to nothing.
-      paddingLeft: "calc(var(--center-pad-l, 0px) + var(--cm-sbw, 0px))",
-      paddingRight: "var(--center-pad-r, 0px)",
+      //
+      // But window-centring is a courtesy and reading width is not, so each pad
+      // is capped at the pane's SLACK — what it has beyond --cm-col-max. Left
+      // uncapped, widening a dock charged the text twice: once because the pane
+      // itself narrowed, again because the pad grew by that same amount and came
+      // straight out of the scroller's content box, so the column shrank at
+      // roughly double the drag and was squeezed to a fraction of its measure
+      // while the pane still looked roomy. Capped, the pad grows only while the
+      // pane can spare it and then yields, frame by frame, as the pane tightens:
+      // the column stops shrinking and settles for centring on the PANE. A
+      // centre that drifts once the pane is tight is a far smaller loss than a
+      // column crushed to a few words a line.
+      //
+      // 100% is the pane width: percentage padding resolves against the
+      // containing block's inline size, and .cm-editor — this scroller's
+      // container — is a bare full-height box inside .editor-host { flex: 1 }
+      // with no padding or border of its own.
+      //
+      // --cm-sbw is ADDED outside the cap because it is not centring at all: it
+      // cancels the one-sided scrollbar gutter. With a right-side gutter of
+      // width G the visible box is clientWidth + G wide, so padding the left by
+      // the same G lands the column dead on window-centre. Padding stays inside
+      // the border box, so — unlike a left gutter — it never shifts CM's layer
+      // origin. Overlay scrollbars measure G = 0 and the extra padding collapses
+      // to nothing. Inside the cap it is SUBTRACTED, for the mirror reason: the
+      // gutter is width the column is never going to get, so slack must be
+      // measured net of it.
+      paddingLeft:
+        "calc(min(var(--center-pad-l, 0px), max(0px, 100% - var(--cm-col-max) - var(--cm-sbw, 0px))) + var(--cm-sbw, 0px))",
+      paddingRight:
+        "min(var(--center-pad-r, 0px), max(0px, 100% - var(--cm-col-max) - var(--cm-sbw, 0px)))",
       transition:
         "padding-left var(--dur-3) var(--ease-out), padding-right var(--dur-3) var(--ease-out)",
     },
@@ -94,7 +123,7 @@ export const editorTheme = EditorView.theme(
       // The app sets body { cursor: default }, which the contenteditable would
       // otherwise inherit — force the I-beam back over the writing surface.
       cursor: "text",
-      maxWidth: "920px",
+      maxWidth: "var(--cm-col-max)",
       // Always centre the readable column. Because the column position is driven
       // purely by the pane width, it tracks the sidebar's width animation frame by
       // frame — collapsing/expanding glides instead of snapping (a margin:0↔auto
@@ -145,6 +174,11 @@ export const editorTheme = EditorView.theme(
     // Display face: the note's name is the one hero-scale moment on the page,
     // so it takes --font-display (the editorial serif by default; the Font
     // picker overwrites it together with --font).
+    //
+    // A <textarea>, not an <input>, so a long name WRAPS instead of scrolling
+    // horizontally inside a single line — the full title is always readable.
+    // Height is driven by the widget's own auto-grow (noteTitle.ts), hence
+    // resize/overflow are shut off here: no drag handle, no inner scrollbar.
     ".cm-note-title": {
       display: "block",
       width: "100%",
@@ -162,6 +196,8 @@ export const editorTheme = EditorView.theme(
       outline: "none",
       cursor: "text",
       caretColor: "var(--accent-text)",
+      resize: "none",
+      overflow: "hidden",
     },
     ".cm-note-title::placeholder": {
       color: "var(--text-faint)",

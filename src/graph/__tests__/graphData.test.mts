@@ -66,6 +66,28 @@ console.log("\n— buildGraphData —");
 {const g=build([note("A"),folder("x","/x",[note("Dup","/x/Dup.md")]),folder("y","/y",[note("Dup","/y/Dup.md")])],
   {"/A.md":"[[Dup]]","/x/Dup.md":"","/y/Dup.md":""});
  eq("ambiguous title → exactly one edge",g.edges.length,1);}
+console.log("\n— buildGraphData: compound [[A]](id:X) links —");
+{const g=build([note("A"),note("B")],{"/A.md":"[[whatever label]](id:b1)","/B.md":"---\nid: b1\n---\n"});
+ eq("compound edge rides the id, not the label",edgeSet(g),["/A.md->/B.md"]);}
+{const g=build([note("A"),note("B"),note("C")],
+  {"/A.md":"[[B|C]](id:b1,c1)","/B.md":"---\nid: b1\n---\n","/C.md":"---\nid: c1\n---\n"});
+ eq("compound multi → edge per slot",edgeSet(g),["/A.md->/B.md","/A.md->/C.md"]);}
+{const g=build([note("A"),note("B"),note("C")],
+  {"/A.md":"[[B|C]](id:b1,_)","/B.md":"---\nid: b1\n---\n","/C.md":""});
+ eq("sentinel slot resolves by title",edgeSet(g),["/A.md->/B.md","/A.md->/C.md"]);}
+{const g=build([note("A"),note("B")],{"/A.md":"[[Old Name]](id:b1)","/B.md":"---\nid: b1\n---\n"});
+ eq("stale label still resolves via id (rename-proof)",edgeSet(g),["/A.md->/B.md"]);}
+{const g=build([note("A"),note("B")],{"/A.md":"[[B]](id:b1) [[B]]","/B.md":"---\nid: b1\n---\n"});
+ eq("id route + title route to same note → ONE edge",edgeSet(g),["/A.md->/B.md"]);}
+{const g=build([note("A"),note("B")],{"/A.md":"[[gone]](id:dead1)","/B.md":""});
+ eq("dead id → no edge",edgeSet(g),[]);}
+{const g=build([note("A"),note("B")],{"/A.md":"[passage text](id:b1)","/B.md":"---\nid: b1\n---\n"});
+ eq("legacy [d](id:X) still draws its edge",edgeSet(g),["/A.md->/B.md"]);}
+{const g=build([note("A"),note("B")],{"/A.md":"[[a\\|b]](id:b1)","/B.md":"---\nid: b1\n---\n"});
+ eq("escaped label doesn't split the link",edgeSet(g),["/A.md->/B.md"]);}
+{const g=build([note("A"),note("B c")],{"/A.md":"[[b c]]","/B c.md":""});
+ eq("bare escape-aware pass keeps title resolution",edgeSet(g),["/A.md->/B c.md"]);}
+
 {const g=build([note("A"),note("B"),note("C")],{"/A.md":"[[B]]","/B.md":"[[C]]","/C.md":""},"/A.md");
  const L=(p:string)=>g.nodes.find(n=>n.path===p)!.layer; eq("layers",[L("/A.md"),L("/B.md"),L("/C.md")],[0,1,2]);}
 {const g=build([note("A"),note("B")],{"/A.md":"[[B]]","/B.md":""},""); eq("no active → layer 999",g.nodes.every(n=>n.layer===999),true);}

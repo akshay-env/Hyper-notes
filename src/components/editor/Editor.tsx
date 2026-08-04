@@ -17,6 +17,7 @@ import {
 import { activeNotePath, renameActiveNote } from "../../state/ui";
 import { captureAskMarks, syncAskMarks } from "../../state/askPopup";
 import { readDoc, createDoc } from "../../state/documents";
+import { normalizeDocLinks } from "../../state/noteId";
 
 // Filename (no extension) shown as the inline title; "" for a blank/graph tab.
 const titleFor = (path: string) => (path ? (path.split("/").pop() || "").replace(/\.md$/i, "") : "");
@@ -35,6 +36,7 @@ const Editor: Component = () => {
 
   const load = (path: string) => {
     createDoc(path); // ensure a doc entry exists so this note's edits persist
+    normalizeDocLinks(path); // legacy links → canonical grammar, before CM sees the text
     setLoadedPath(path);
     view!.setState(createEditorState(readDoc(path), [syncListener], editorMode(), titleFor(path), onTitleRename));
     setEditorDoc(view!.state.doc.toString());
@@ -44,6 +46,7 @@ const Editor: Component = () => {
     if (!host) return;
     let loaded = activeNotePath();
     createDoc(loaded);
+    normalizeDocLinks(loaded);
     view = new EditorView({
       state: createEditorState(readDoc(loaded), [syncListener], editorMode(), titleFor(loaded), onTitleRename),
       parent: host,

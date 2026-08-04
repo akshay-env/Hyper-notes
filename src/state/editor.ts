@@ -7,6 +7,7 @@ import { EditorView } from "@codemirror/view";
 import { setSearchTerm, matchPositions } from "../editor/noteSearch";
 import { applyEditorMode, type EditorMode } from "../editor/createEditorState";
 import { saveDoc, readDoc, docExists } from "./documents";
+import { setLiveDocHooks } from "./noteId";
 import { vaultRoot } from "./session";
 import { writeNoteFs } from "../backend/vaultApi";
 
@@ -60,6 +61,29 @@ export function reloadEditorDoc(): void {
     selection: { anchor: Math.min(view.state.selection.main.head, text.length) },
   });
 }
+
+// Hand state/noteId the live-buffer bridge it cannot import. ensureNoteId() has
+// to reconcile the docs store with this buffer before it reads and after it
+// writes, or minting an id into the OPEN note leaves the id in the store only —
+// where the next flushEditor() deletes it, killing every link just written
+// against it. state/noteId's header has the full argument; the short version is
+// that it cannot `import { flushEditor } from "./editor"` because that closes
+//     state/noteId → state/editor → editor/createEditorState
+//                  → editor/livePreview → state/noteId
+// (livePreview imports findPathById). THIS direction is safe: state/noteId
+// reaches only ./vault, ./documents, ./session, ../backend/vaultApi and
+// ../graph/wikilinkParse, and none of those — transitively either — reach back
+// into state/editor. Same injection idiom as editor/noteTitle's rename handler.
+//
+// At MODULE scope rather than inside a component on purpose. ensureNoteId is
+// reachable from anywhere the moment a vault is open (a link click, a completion
+// pick, a rename from the file tree), so the hooks must be live before the first
+// vault interaction — not after some component's onMount happens to run. This
+// module is imported by components/editor/Editor at app start, so the
+// registration lands during that import, and both functions already tolerate a
+// null editorView()/empty loadedPath, which is exactly the state they are in
+// until the editor mounts.
+setLiveDocHooks(flushEditor, reloadEditorDoc);
 
 // ── In-note find (NoteSearchBar.qml searchRun/Next/Prev/Clear + count/current) ─
 export const [searchCount, setSearchCount] = createSignal(0);

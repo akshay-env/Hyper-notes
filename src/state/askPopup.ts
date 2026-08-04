@@ -3,11 +3,21 @@
 // scoped to that passage and the answer streams into the POPUP, not the note.
 // The asked-about range keeps a .cm-ask-mark in the editor: hovering it recalls
 // the popup (query + answer), and clicking a finished popup saves both as a new
-// note beside the one it came from AND replaces the asked-about passage with a
-// [[wikilink]] to that note — so the answer is reachable from the source note
-// like any other link, not an orphan. Entries live here keyed by mark id; the
-// marks themselves are a pure CM extension (editor/askPopupMarks.ts) that
-// cannot import this module, so hover is wired through registerAskMarkHover.
+// note beside the one it came from AND wraps the asked-about passage in a
+// rename-proof id link to that note ([full passage](id:XYZ)) — the parent keeps
+// every character of its own text, the child's filename is just a tidy starter
+// name, and renaming the child never touches the parent. Entries live here
+// keyed by mark id; the marks themselves are a pure CM extension
+// (editor/askPopupMarks.ts) that cannot import this module, so hover is wired
+// through registerAskMarkHover.
+//
+// One passage can carry SEVERAL questions — each one is its own entry with its
+// own mark over the same range — so the open popup names a SET of entries plus
+// which of them is showing. The card renders that set as a strip of chips (the
+// multi-target link card's layout, deliberately reused) and the active entry's
+// lifecycle underneath it. Everything else here is still keyed by a single id:
+// asking, saving and closing all act on ONE entry, and the popup's activeId is
+// what every caller passes.
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import { type StateEffect } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
@@ -20,6 +30,8 @@ import {
 import { editorView, flushEditor } from "./editor";
 import { activeNotePath, createNoteIn } from "./ui";
 import { readDoc } from "./documents";
+import { hideWikilinkNow } from "./wikilink";
+import { mintNoteId, linkifySelection } from "../graph/wikilinkParse";
 import { llmProvider, llmKeyPresent, llmModel, llmBaseUrl, webSearchActive } from "./settings";
 import { ask } from "../ai/llmService";
 import { cancelAsk } from "../backend/llmApi";
@@ -47,45 +59,56 @@ export interface AskPopupEntry {
   setError: Setter<string>;
 }
 
+// Insertion order IS creation order — an id is set once and never re-inserted
+// (saveAskPopupAsNote deletes, it does not replace), so iterating this Map is
+// how "oldest question first" is answered below.
 const entries = new Map<string, AskPopupEntry>();
 export const getAskEntry = (id: string): AskPopupEntry | undefined => entries.get(id);
 
-// The open popup: which entry, anchored where. The rect (viewport coordinates)
-// feeds Ark's getAnchorRect in AskPopup.tsx.
+export type AskRect = { x: number; y: number; width: number; height: number };
+
+// The open popup: which entries the hovered passage carries, which one is
+// showing, anchored where. The rect (viewport coordinates) feeds Ark's
+// getAnchorRect in AskPopup.tsx.
+//
+// `ids` is always in creation order (see openAskPopupForMarks) and `activeId` is
+// always one of them.
 export const [askPopup, setAskPopup] = createSignal<{
-  id: string;
-  rect: { x: number; y: number; width: number; height: number };
+  ids: string[];
+  activeId: string;
+  rect: AskRect;
 } | null>(null);
 
-/// Opens the popup for a passage. `selection` must be the RAW slice of [from, to)
-/// — the two are trimmed together here so every entry point (right-click menu and
-/// Ctrl+Shift+A) agrees. Trimming in the callers instead let them drift: the range
-/// keys the .cm-ask-mark, the context anchor AND the span saveAskPopupAsNote
-/// replaces with a [[wikilink]], so a line selected with Ctrl+L (CodeMirror
-/// includes the trailing line break) had its newline swallowed by that replacement
-/// on one path and not the other.
-export function openAskPopupAt(
-  selection: string,
-  from: number,
-  to: number,
-  rect: { x: number; y: number; width: number; height: number },
-): void {
-  const lead = selection.length - selection.trimStart().length;
-  const trail = selection.length - selection.trimEnd().length;
-  const text = selection.trim();
-  if (!text) return; // nothing but whitespace — no passage to ask about
-  from += lead;
-  to -= trail;
+// Every path that puts the ask card on screen goes through here, so the
+// precedence rule below lives in exactly one place.
+//
+// PRECEDENCE: saving an answer wraps the asked-about passage in an id link, so
+// any question still open on that text now sits on a range that is ALSO a link —
+// and editor/wikilinkInteractions' mouseover fires on the same event as
+// editor/askPopupMarks'. Both cards want the pointer. The ask card wins: it is
+// the more specific thing the user built on that text (they asked about it and
+// kept the other questions), while the link card only ever previews a note that
+// is one click away anyway. Dismissing the link card here rather than teaching
+// state/wikilink about ask marks keeps the dependency one-way — state/wikilink
+// does not import this module, so this edge cannot cycle.
+function showAskPopup(next: { ids: string[]; activeId: string; rect: AskRect }): void {
+  hideWikilinkNow();
+  setAskPopup(next);
+}
 
+// The per-entry signal bundle. Shared by the two ways an entry is born: a fresh
+// selection (openAskPopupAt) and another question on a passage that already has
+// one (askAnotherOnSamePassage).
+function makeEntry(path: string, selection: string, from: number, to: number): AskPopupEntry {
   const [query, setQuery] = createSignal("");
   const [answer, setAnswer] = createSignal("");
   const [searchStatus, setSearchStatus] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<AskPopupStatus>("input");
   const [error, setError] = createSignal("");
-  const entry: AskPopupEntry = {
+  return {
     id: crypto.randomUUID(),
-    path: activeNotePath(),
-    selection: text,
+    path,
+    selection,
     from,
     to,
     query,
@@ -99,25 +122,109 @@ export function openAskPopupAt(
     error,
     setError,
   };
+}
+
+/// Opens the popup for a passage. `selection` must be the RAW slice of [from, to)
+/// — the two are trimmed together here so every entry point (right-click menu and
+/// Ctrl+Shift+A) agrees. Trimming in the callers instead let them drift: the range
+/// keys the .cm-ask-mark, the context anchor AND the span saveAskPopupAsNote
+/// replaces with a [[wikilink]], so a line selected with Ctrl+L (CodeMirror
+/// includes the trailing line break) had its newline swallowed by that replacement
+/// on one path and not the other.
+export function openAskPopupAt(selection: string, from: number, to: number, rect: AskRect): void {
+  const lead = selection.length - selection.trimStart().length;
+  const trail = selection.length - selection.trimEnd().length;
+  const text = selection.trim();
+  if (!text) return; // nothing but whitespace — no passage to ask about
+  from += lead;
+  to -= trail;
+
+  const entry = makeEntry(activeNotePath(), text, from, to);
   entries.set(entry.id, entry);
   // Mark the range up front so the hover anchor exists while still typing; a
   // popup abandoned empty removes it again in closeAskPopup.
   editorView()?.dispatch({ effects: addAskMark.of({ id: entry.id, from, to }) });
   cancelHideAskPopup();
-  setAskPopup({ id: entry.id, rect });
+  // A fresh ask always opens ALONE, even over a passage that already carries
+  // other questions: the strip is a recall affordance, and the thing the user
+  // just started typing is the only thing they asked for.
+  showAskPopup({ ids: [entry.id], activeId: entry.id, rect });
 }
 
-// Hover recall over an existing mark.
-export function openAskPopupForMark(id: string, rect: DOMRect): void {
-  if (!entries.has(id)) return;
+// Hover recall over the marks under the pointer. `ids` is whatever
+// editor/askPopupMarks found covering that position, in document order —
+// meaningless for marks sharing a range, so it is re-ordered here.
+//
+// CREATION ORDER, not document order: the strip must not reshuffle itself as the
+// pointer moves a few pixels, and it must read the same on every hover of the
+// same passage. Two marks over identical ranges have no stable relative document
+// order at all, and even distinct ranges would sort by where the passages START,
+// which says nothing about which question came first. This module is the only
+// one that knows creation order (the entries Map's insertion order), and walking
+// that Map filtered by the reported ids does the ordering, the de-duplication
+// and the "drop ids with no entry" in a single pass.
+export function openAskPopupForMarks(ids: string[], rect: DOMRect): void {
+  const wanted = new Set(ids);
+  const ordered = [...entries.keys()].filter((id) => wanted.has(id));
+  if (!ordered.length) return; // every reported mark is orphaned — nothing to recall
   const cur = askPopup();
-  if (cur && cur.id !== id) {
-    const shown = entries.get(cur.id);
-    // A stray hover over another mark must not yank away a popup that's being
-    // typed into or streamed — the same protection scheduleHide gives mouse-out.
+  // A stray hover over another passage must not yank away a popup that's being
+  // typed into or streamed — the same protection scheduleHide gives mouse-out.
+  // A hover that lands back on the popup's OWN entry is not stray, so it still
+  // gets through (it is how the strip grows to include a sibling asked earlier).
+  if (cur && !wanted.has(cur.activeId)) {
+    const shown = entries.get(cur.activeId);
     if (shown && (shown.status() === "input" || shown.status() === "asking")) return;
   }
-  setAskPopup({ id, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+  // Default to the entry created LAST — the question you just asked is the one
+  // you expect to see. Re-hovering a passage whose popup is already up keeps
+  // whatever is showing instead, so the pointer travelling over the text can
+  // never swap the answer out from under itself.
+  const activeId =
+    cur && wanted.has(cur.activeId) ? cur.activeId : ordered[ordered.length - 1];
+  showAskPopup({
+    ids: ordered,
+    activeId,
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+  });
+}
+
+// Which of the popup's entries is showing. Driven by hovering a chip in the
+// strip, matching the link hover card where hovering a target reveals it.
+export function setActiveAskEntry(id: string): void {
+  const cur = askPopup();
+  if (!cur || cur.activeId === id || !cur.ids.includes(id)) return;
+  setAskPopup({ ...cur, activeId: id });
+}
+
+// The strip's "+" chip: another question about the SAME passage, without having
+// to re-select it. The new entry becomes the active one, in "input" status, so
+// the card swaps straight to the question form.
+export function askAnotherOnSamePassage(): void {
+  const cur = askPopup();
+  const base = cur ? entries.get(cur.activeId) : undefined;
+  if (!cur || !base) return;
+  const view = editorView();
+  // Only when the entry's OWN note is on screen. Hover recall can fire from any
+  // note, and the range below is only meaningful against the live buffer — the
+  // same rule submitAskPopup and saveAskPopupAsNote apply before touching it.
+  if (!view || activeNotePath() !== base.path) return;
+  // The LIVE mark range wins, with the stored from/to as the fallback for a mark
+  // that is no longer in the field (never seeded, or the note was swapped in
+  // without it) — the passage may have moved since the base entry was created.
+  const live = askMarkRanges(view.state).find((r) => r.id === base.id);
+  const len = view.state.doc.length;
+  const from = Math.min(live ? live.from : base.from, len);
+  const to = Math.min(live ? live.to : base.to, len);
+  if (from >= to) return; // the passage is gone — nothing left to ask about
+  // The doc's text is the truth, not base.selection: it may have been edited
+  // under the mark while the popup sat open (saveAskPopupAsNote wraps the live
+  // text for the same reason).
+  const entry = makeEntry(base.path, view.state.sliceDoc(from, to), from, to);
+  entries.set(entry.id, entry);
+  view.dispatch({ effects: addAskMark.of({ id: entry.id, from, to }) });
+  cancelHideAskPopup();
+  showAskPopup({ ids: [...cur.ids, entry.id], activeId: entry.id, rect: cur.rect });
 }
 
 // ── Show/hide with a grace period (mirrors state/wikilink.ts) ─────────────────
@@ -128,17 +235,21 @@ export function closeAskPopup(): void {
   const cur = askPopup();
   setAskPopup(null);
   if (!cur) return;
-  const entry = entries.get(cur.id);
   // A popup parked with nothing typed must not leave a permanent mark behind.
+  // Strictly the ACTIVE entry: the popup can hold several, and the siblings are
+  // finished questions the user asked about the same passage — dropping those
+  // because a newly-added one was abandoned would delete answers they never
+  // touched.
+  const entry = entries.get(cur.activeId);
   if (entry && entry.status() === "input" && !entry.query().trim()) {
-    entries.delete(cur.id);
-    editorView()?.dispatch({ effects: removeAskMark.of(cur.id) });
+    entries.delete(cur.activeId);
+    editorView()?.dispatch({ effects: removeAskMark.of(cur.activeId) });
   }
 }
 export function scheduleHideAskPopup(): void {
   clearTimeout(hideTimer);
   const cur = askPopup();
-  const entry = cur ? entries.get(cur.id) : undefined;
+  const entry = cur ? entries.get(cur.activeId) : undefined;
   // Typing/streaming must not vanish on a mouse-out — only a settled popup
   // ("done"/"error") hides on the grace timer; the others close explicitly.
   if (entry && (entry.status() === "input" || entry.status() === "asking")) return;
@@ -237,10 +348,11 @@ export function stopAskPopup(): void {
 }
 
 // ── Save as note ──────────────────────────────────────────────────────────────
-// The title doubles as the filename AND as the text of the wikilink that
-// replaces the passage, so it must survive Windows and the vault's wikilink
-// syntax alike: strip newlines, drop illegal characters, collapse runs of
-// whitespace, cap the length.
+// The title is ONLY the child note's filename — a tidy starter name, per the
+// design: the parent keeps the full passage as the id link's display text, so
+// nothing is lost when this flattens and caps. It must survive Windows and the
+// vault's wikilink syntax alike: strip newlines, drop illegal characters,
+// collapse runs of whitespace, cap the length.
 function sanitiseTitle(raw: string): string {
   return raw
     .replace(/[\r\n]+/g, " ")
@@ -260,26 +372,34 @@ function noteTitleFor(selection: string, query: string): string {
 export function saveAskPopupAsNote(id: string): void {
   const entry = entries.get(id);
   if (!entry || entry.status() !== "done") return;
-  // The quote stays even though the title now echoes the passage: the title is
-  // flattened to one line and capped at 60 chars, so the quote is the only
-  // faithful copy of a long or multi-line selection.
+  // The child carries a minted id in its frontmatter from birth — that id, not
+  // the filename, is what the parent's link resolves through, so renaming the
+  // child never touches the parent again.
+  const noteId = mintNoteId();
+  // The quote stays even though the parent keeps the passage too: the child
+  // should read standalone, with the asked-about text right above the answer.
   const quoted = entry.selection
     .split("\n")
     .map((l) => "> " + l)
     .join("\n");
-  const content = quoted + "\n\n**Q:** " + entry.query() + "\n\n" + entry.answer() + "\n";
+  const content =
+    `---\nid: ${noteId}\n---\n\n` +
+    quoted +
+    "\n\n**Q:** " +
+    entry.query() +
+    "\n\n" +
+    entry.answer() +
+    "\n";
   // The folder of the ENTRY's note (computed like activeNoteFolder, but from
   // entry.path) — hover recall may fire with a different note active, and the
   // saved note belongs beside the one that was asked about.
   const i = entry.path.lastIndexOf("/");
   const folder = i <= 0 ? "" : entry.path.slice(0, i);
   // Create it WITHOUT opening (confirmAddNote's "create, don't leave the note"),
-  // and BEFORE editing the source: createNoteIn dedupes names (uniquePath in
-  // state/vault.ts), so the file may land as "Name 2.md". The link has to carry
-  // the name it ACTUALLY got — the requested one would resolve to the
-  // pre-existing note instead of the one just created.
-  const newPath = createNoteIn(folder, noteTitleFor(entry.selection, entry.query()), false, content);
-  const linkName = newPath.split("/").pop()!.replace(/\.md$/i, "");
+  // and BEFORE editing the source. createNoteIn dedupes names (uniquePath in
+  // state/vault.ts) — the filename can shift to "Name 2.md" freely, because the
+  // parent's link rides the id, not the name.
+  createNoteIn(folder, noteTitleFor(entry.selection, entry.query()), false, content);
 
   const view = editorView();
   // Rewrite the passage only when the entry's own note is the one on screen:
@@ -294,15 +414,22 @@ export function saveAskPopupAsNote(id: string): void {
     const from = Math.min(live ? live.from : entry.from, len);
     const to = Math.min(live ? live.to : entry.to, len);
     if (from < to) {
+      // The passage is wrapped, never replaced: the full selected text stays in
+      // the parent as the link's display (the old behaviour swapped it for the
+      // truncated child title — the user's text was silently cut down).
+      // The live text under the mark is what gets wrapped — it may have drifted
+      // from entry.selection while the popup sat open, and the doc's version is
+      // the truth.
+      //
       // ONE transaction: splitting the replacement from the mark removal would
-      // leave an intermediate state whose mark points at the new wikilink.
+      // leave an intermediate state whose mark points at the new link.
       view.dispatch({
-        changes: { from, to, insert: "[[" + linkName + "]]" },
+        changes: { from, to, insert: linkifySelection(view.state.sliceDoc(from, to), noteId) },
         effects: removeAskMark.of(id),
         userEvent: "input.wikilink",
       });
-      // The range is a plain wikilink from here on, so the ask entry must stop
-      // existing: the wikilink's own hover card owns that text now, and a
+      // The range is a plain link from here on, so the ask entry must stop
+      // existing: the link's own hover card owns that text now, and a
       // surviving entry would fight it for the hover.
       entries.delete(id);
     }
@@ -351,9 +478,9 @@ export function syncAskMarks(view: EditorView, path: string): void {
 // Hover recall wiring — the marks extension can't import this module (import
 // cycle, see its header), so it calls back through this registration.
 registerAskMarkHover(
-  (id, rect) => {
+  (ids, rect) => {
     cancelHideAskPopup();
-    openAskPopupForMark(id, rect);
+    openAskPopupForMarks(ids, rect);
   },
   () => scheduleHideAskPopup(),
 );

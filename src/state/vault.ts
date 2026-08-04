@@ -6,6 +6,7 @@
 // from the folder the user opens.
 import { createStore, produce, reconcile } from "solid-js/store";
 import { type VaultNode } from "./vaultTypes";
+import { titleKey, normalizeTarget } from "../graph/wikilinkParse";
 
 // Deep clone a subtree — turns store proxies back into plain objects (bin
 // snapshot/restore) and detaches the copy from the live store.
@@ -92,6 +93,43 @@ export function getNode(path: string): VaultNode | undefined {
   return findNode(vaultTree, path);
 }
 
+// Resolve a link target to a note path, the same way the graph draws its edges.
+// The target is normalized (anchor/".md"/whitespace stripped) and matched
+// case-insensitively against each note's basename OR its full vault-relative
+// path, so [[Note]], [[folder/Note]], [[Note#Heading]] and [[Note.md]] all
+// resolve. An exact path match wins over a basename match.
+//
+// It lives HERE, beside vaultTree, rather than in state/wikilink where it was
+// written, because the "[[" autocomplete needs the SAME resolution and cannot
+// import state/wikilink: that module pulls in state/ui → state/editor →
+// createEditorState → wikilinkComplete, i.e. straight back into its own caller.
+// This module imports only solid-js/store, ./vaultTypes and graph/wikilinkParse
+// (which imports nothing at all), so it stays safe to reach for from anywhere —
+// and there is exactly one implementation, so no two callers can ever disagree
+// about which note a link points at. state/wikilink delegates to this.
+export function findPathByTitle(rawTitle: string): string {
+  const want = titleKey(normalizeTarget(rawTitle));
+  if (!want) return "";
+  const wantBase = want.includes("/") ? want.slice(want.lastIndexOf("/") + 1) : want;
+  let pathHit = "";
+  let nameHit = "";
+  const walk = (ns: VaultNode[]) => {
+    for (const n of ns) {
+      if (n.isFolder) {
+        walk(n.children ?? []);
+        continue;
+      }
+      const noExt = n.path.replace(/\.md$/i, "").replace(/^\//, "");
+      const pathKey = titleKey(noExt);
+      const nameKey = titleKey(noExt.split("/").pop() || noExt);
+      if (!pathHit && pathKey === want) pathHit = n.path;
+      if (!nameHit && nameKey === wantBase) nameHit = n.path;
+    }
+  };
+  walk(vaultTree);
+  return pathHit || nameHit;
+}
+
 // How many notes carry `title` as their basename (case-insensitive). Used to
 // decide whether a rename can safely rewrite [[title]] links: only when this is
 // 0 afterward (no other note still answers to the old name).
@@ -164,9 +202,18 @@ export function renameNode(path: string, rawName: string): RenameResult | null {
   const parentPath = dirOf(path);
   let newName = rawName.trim();
   if (!newName) return null;
+  // Path separators and Windows-reserved characters can't survive the fs
+  // rename anyway — rejecting here (the title widget restores the old name)
+  // beats letting the in-memory tree silently diverge from a failed fs move.
+  if (/[\\/:*?"<>|]/.test(newName)) return null;
   if (!node.isFolder && !/\.md$/i.test(newName)) newName += ".md";
   const newPath = parentPath === "" ? `/${newName}` : `${parentPath}/${newName}`;
   if (newPath === path) return { newPath, noteMoves: [] };
+  // Renaming ONTO an existing sibling is rejected, not merged: renameDoc would
+  // overwrite the sibling's content in the store and std::fs::rename replaces
+  // the destination file on Windows — silent data loss. (A case-only rename of
+  // the same node passes: newPath !== path but the collision IS the node.)
+  if (pathExists(newPath) && newPath.toLowerCase() !== path.toLowerCase()) return null;
 
   const noteMoves: [string, string][] = [];
   // Recompute paths for `n` (now living at `np`) and everything beneath it.

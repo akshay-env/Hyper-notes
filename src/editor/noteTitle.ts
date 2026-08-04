@@ -11,7 +11,10 @@
 // blurring the input drops focus on <body> and the caret simply disappears, and no
 // key in the body can reach an <input> that CM refuses to own. Both crossings are
 // therefore driven explicitly — Enter/Escape downward from inside the widget,
-// titleNavKeymap upward from inside the document.
+// titleNavKeymap (ArrowUp only) upward from inside the document. Backspace at the
+// start of the body deliberately does NOT return to the title: deleting is what the
+// key means everywhere else in the note, and having it teleport focus upward instead
+// was more surprising than helpful. ArrowUp is the one upward crossing.
 import {
   EditorView,
   WidgetType,
@@ -67,7 +70,7 @@ function focusBody(view: EditorView): void {
 // title === "") or a first line scrolled out of the rendered viewport — which is
 // what lets the key fall through to its normal editing command.
 function focusTitle(view: EditorView): boolean {
-  const el = view.contentDOM.querySelector<HTMLInputElement>(".cm-note-title");
+  const el = view.contentDOM.querySelector<HTMLTextAreaElement>(".cm-note-title");
   if (!el) return false;
   el.focus();
   const end = el.value.length;
@@ -76,6 +79,9 @@ function focusTitle(view: EditorView): boolean {
 }
 
 class TitleWidget extends WidgetType {
+  // The auto-grow ResizeObserver for the currently rendered DOM; released in
+  // destroy() so a discarded widget can't keep observing a detached node.
+  private ro: ResizeObserver | null = null;
   constructor(
     readonly title: string,
     readonly onRename: (name: string) => boolean,
@@ -88,18 +94,66 @@ class TitleWidget extends WidgetType {
   // CM6 passes the EditorView into toDOM; taking it here is how the widget reaches
   // the editor to move focus/caret without importing app state.
   toDOM(view: EditorView) {
-    // A real <input> — not a contenteditable — because CM6 owns the .cm-content
+    // A real form control — not a contenteditable — because CM6 owns the .cm-content
     // editing host and its focus/selection management swallows a nested editable's
-    // blur/commit. An <input> is an independent focus target with reliable
+    // blur/commit. A form control is an independent focus target with reliable
     // keydown/blur semantics, and CM's contenteditable="false" on the widget root is
-    // simply ignored by a form control.
-    const el = document.createElement("input");
+    // simply ignored by it. A <textarea> rather than an <input> so a long name WRAPS
+    // to as many rows as it needs instead of scrolling inside one line; Enter still
+    // commits (preventDefault below), so a newline can never be typed into it.
+    const el = document.createElement("textarea");
     el.className = "cm-note-title";
-    el.type = "text";
+    el.rows = 1;
     el.spellcheck = false;
     el.setAttribute("aria-label", "Note title");
     el.placeholder = "Untitled";
     el.value = this.title;
+    // Auto-grow: the element's height always equals its wrapped content's height.
+    // CM cannot do this for us — the widget is opaque to it (ignoreEvent, keydown
+    // stopPropagation), so every height change must ALSO be followed by a
+    // requestMeasure() or CM's height map goes stale: coordsAtPos (which
+    // titleFromFirstLine depends on), the scrollbar, and the position of every
+    // block below would drift until some unrelated transaction fixed them.
+    //
+    // The reset-to-0-then-measure is what makes SHRINKING work: with the height
+    // pinned, scrollHeight is spec-clamped to never read below clientHeight, so
+    // the true content height is only observable after collapsing the pin.
+    // (That is also why the observer below can't gate on scrollHeight ≠
+    // clientHeight — that comparison literally cannot see the shrink case.)
+    const grow = () => {
+      el.style.height = "0";
+      el.style.height = el.scrollHeight + "px";
+      view.requestMeasure();
+    };
+    // Wrap points move when the column resizes (dock drag, window resize, a font
+    // change that alters the column width), not just when the text changes — so
+    // the observer is needed on top of the input listener below.
+    //
+    // But only the WIDTH of the box can move a wrap point: height is what wrapping
+    // PRODUCES, never an input to it. So an observed height change can never mean
+    // there is re-growing to do, and re-growing on every observed resize made us
+    // pay a forced synchronous layout (the reset-to-0 read above) plus a CM measure
+    // pass for two kinds of non-event — grow()'s own height write echoing back
+    // (harmless, it converged, but it converged by doing the whole thing twice),
+    // and every single frame of a dock drag, where the height is settling while the
+    // width is what the user is actually moving. Gate on width and both go away.
+    //
+    // Epsilon, not !==: at fractional DPR the observed width is fractional and its
+    // last bits jitter without the column having moved at all.
+    let lastW = -1;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[entries.length - 1]?.contentRect.width ?? -1;
+      if (Math.abs(w - lastW) < 0.5) return;
+      lastW = w;
+      grow();
+    });
+    ro.observe(el);
+    this.ro?.disconnect(); // paranoia: a second toDOM must not leak the first observer
+    this.ro = ro;
+    // toDOM runs before the node is attached (scrollHeight would read 0); grow once
+    // on the next frame, when the widget is in the document and measurable.
+    requestAnimationFrame(grow);
+    el.addEventListener("input", grow);
     let done = false; // Enter and the ensuing blur must commit only once
     const commit = () => {
       if (done) return;
@@ -110,11 +164,12 @@ class TitleWidget extends WidgetType {
       } else {
         el.value = this.title; // normalise stray whitespace / empty
       }
+      grow(); // a restored/normalised value can wrap to a different row count
     };
     // Arm the next commit every time the field is entered. Without this the latch
     // set by a first Enter/Escape would survive for the lifetime of the widget, and
-    // coming BACK to the title (Backspace from the body) would silently edit a name
-    // that can never be saved.
+    // coming BACK to the title (ArrowUp from the top row of the body, or simply
+    // clicking the field) would silently edit a name that can never be saved.
     el.addEventListener("focus", () => {
       done = false;
     });
@@ -138,6 +193,7 @@ class TitleWidget extends WidgetType {
       } else if (e.key === "Escape") {
         e.preventDefault();
         el.value = this.title;
+        grow();
         done = true;
         focusBody(view);
         done = false;
@@ -148,25 +204,16 @@ class TitleWidget extends WidgetType {
     el.addEventListener("blur", commit);
     return el;
   }
+  destroy() {
+    this.ro?.disconnect();
+    this.ro = null;
+  }
   // The widget owns its own editing surface — CM must not treat clicks/keys in it as
   // document interaction.
   ignoreEvent() {
     return true;
   }
 }
-
-// Backspace on the first typable character of the note: step back INTO the title
-// rather than doing nothing. Deliberately narrow — one caret, no selection, exactly
-// at bodyStart — because every other Backspace in the note must still delete.
-// bodyStart, not 0: on a note with frontmatter the caret can never BE at 0 (the
-// properties widget owns that offset), so testing 0 would make this dead code on
-// exactly the notes the app generates with properties.
-const titleFromDocStart: Command = (view) => {
-  const sel = view.state.selection;
-  if (sel.ranges.length !== 1 || !sel.main.empty) return false;
-  if (sel.main.head !== bodyStart(view)) return false;
-  return focusTitle(view);
-};
 
 // ArrowUp with nowhere left to go upwards. Line wrapping means "on line 1" is not
 // the same as "on the top row", so the caret's own top is compared against the top
@@ -178,7 +225,7 @@ const titleFromFirstLine: Command = (view) => {
   if (sel.ranges.length !== 1 || !sel.main.empty) return false;
   const line = view.state.doc.lineAt(sel.main.head);
   // The first TYPABLE line, which is not line 1 when a properties panel replaces the
-  // frontmatter — same reason as titleFromDocStart.
+  // frontmatter — hence bodyStart rather than a hard-coded offset 0 (see bodyStart).
   if (line.from !== bodyStart(view)) return false;
   const here = view.coordsAtPos(sel.main.head);
   const top = view.coordsAtPos(line.from);
@@ -189,20 +236,15 @@ const titleFromFirstLine: Command = (view) => {
 // Registered inside createEditorState's single keymap.of([…]), before defaultKeymap.
 //
 // Precisely what that ordering does and does not buy, because the obvious reading is
-// wrong: array position only decides among bindings at the SAME precedence, and two
-// of the neighbours here are not. autocompletion() installs completionKeymap at
-// Prec.highest and markdown() installs its own markdownKeymap at Prec.high, so both
-// outrank this list wherever they are written. An open [[link]] popup therefore keeps
-// ArrowUp regardless — and markdownKeymap's Backspace (deleteMarkupBackward) gets
-// first refusal, which is harmless only because it declines at the top of the
-// document. What array order genuinely settles is beating defaultKeymap, whose
-// Backspace (deleteCharBackward) and ArrowUp (cursorLineUp) both handle the event
-// unconditionally and would otherwise starve these. Both commands return false unless
-// the caret is against the first typable position, so they cost nothing elsewhere.
-export const titleNavKeymap: KeyBinding[] = [
-  { key: "Backspace", run: titleFromDocStart },
-  { key: "ArrowUp", run: titleFromFirstLine },
-];
+// wrong: array position only decides among bindings at the SAME precedence, and the
+// neighbour that matters most here is not. autocompletion() installs completionKeymap
+// at Prec.highest, so it outranks this list wherever it is written — an open [[link]]
+// popup therefore keeps ArrowUp for moving through its options, which is exactly what
+// we want. What array order genuinely settles is beating defaultKeymap, whose ArrowUp
+// (cursorLineUp) handles the event unconditionally and would otherwise starve this
+// binding. The command returns false unless the caret is on the top row of the first
+// typable line, so it costs nothing elsewhere and ordinary ArrowUp still falls through.
+export const titleNavKeymap: KeyBinding[] = [{ key: "ArrowUp", run: titleFromFirstLine }];
 
 function build(title: string, onRename: (name: string) => boolean): DecorationSet {
   if (title === "") return Decoration.none; // blank / graph tab → no title
