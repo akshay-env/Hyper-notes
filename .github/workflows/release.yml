@@ -54,7 +54,7 @@ jobs:
         run: |
           {
             echo 'body<<RELEASE_NOTES_EOF'
-            cat docs/RELEASE_NOTES_v2.md
+            cat docs/RELEASE_NOTES.md
             echo 'RELEASE_NOTES_EOF'
           } >> "$GITHUB_OUTPUT"
 

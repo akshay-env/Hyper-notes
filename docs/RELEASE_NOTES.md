@@ -1,9 +1,10 @@
-HyperLinkNotes 2.1.0 puts the AI assistant at the centre: you can now ask about
-exactly the words you highlighted, and the answer stays anchored to them.
+HyperLinkNotes 3.0 makes the AI assistant a first-class part of the notebook:
+ask about exactly the words you highlighted, and the answer stays anchored to
+them.
 
 ## Install
 
-Download **HyperLinkNotes_2.1.0_x64-setup.exe** (or the `.msi`) below and run it.
+Download **HyperLinkNotes_3.0.0_x64-setup.exe** (or the `.msi`) below and run it.
 
 The app renders through the Microsoft Edge **WebView2** runtime, which is
 preinstalled on Windows 11 and current Windows 10. The installer fetches it if
@@ -33,11 +34,13 @@ improved syntax highlighting, and external links opening in your browser.
 **A leaner codebase.** Dead code, stale build artifacts, and unused assets are
 gone, and the README was rewritten around how the assistant actually works.
 
-## Previously in v2
+## Previous versions
 
-v2 is a ground-up rebuild of the app: **Rust + Tauri 2** backend with a
+**v2** was a ground-up rebuild of the app: **Rust + Tauri 2** backend with a
 **SolidJS** frontend, graph physics compiled to **WebAssembly** on a worker
 thread, API keys held write-only in the Windows credential store, and every
-model request made from Rust. Version 1 was native C++ / Qt 6 / QML and remains
-on the [`qt-legacy`](../../tree/qt-legacy) branch under the
+model request made from Rust.
+
+**v1** was native C++ / Qt 6 / QML and remains on the
+[`qt-legacy`](../../tree/qt-legacy) branch under the
 [`v1.0.0`](../../releases/tag/v1.0.0) tag.

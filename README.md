@@ -418,7 +418,11 @@ assembly/            AssemblyScript source for the physics kernel
 
 ## Version history
 
-**v2** is a ground-up rebuild on Rust, Tauri and SolidJS.
+**v3** is the current release. It makes the AI assistant a first-class part of the
+notebook: asking about a highlighted passage, answers anchored to the exact words you
+selected, and per-provider model setup.
+
+**v2** was a ground-up rebuild on Rust, Tauri and SolidJS.
 
 **v1** was a native C++ / Qt 6 / QML application — a different implementation of the same
 idea. It remains on the
